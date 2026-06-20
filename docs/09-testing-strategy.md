@@ -4,10 +4,10 @@
 
 ```text
 tests/
-  DocumentRag.UnitTests/
-  DocumentRag.IntegrationTests/
-  DocumentRag.ArchitectureTests/
-  DocumentRag.RagEvaluationTests/
+  OpenRAG.UnitTests/
+  OpenRAG.IntegrationTests/
+  OpenRAG.ArchitectureTests/
+  OpenRAG.RagEvaluationTests/
 ```
 
 ## Unit tests

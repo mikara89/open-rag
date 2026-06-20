@@ -7,8 +7,8 @@ Use Aspire as the default local development orchestrator.
 Aspire should start and connect:
 
 ```text
-DocumentRag.Api
-DocumentRag.Worker
+OpenRAG.Api
+OpenRAG.Worker
 PostgreSQL
 RabbitMQ
 S3-compatible object storage
@@ -25,8 +25,8 @@ Aspire gives the project a single code-first place to describe a distributed loc
 Add:
 
 ```text
-src/DocumentRag.AppHost/
-src/DocumentRag.ServiceDefaults/
+src/OpenRAG.AppHost/
+src/OpenRAG.ServiceDefaults/
 ```
 
 The AppHost owns dev-time resource orchestration only. It must not contain business logic.
@@ -51,8 +51,8 @@ This mode is useful for fast debugging, but it does not validate real distribute
 Use as the default team development mode.
 
 ```text
-DocumentRag.Api process
-DocumentRag.Worker process
+OpenRAG.Api process
+OpenRAG.Worker process
 PostgreSQL for application DB and CAP storage
 RabbitMQ for CAP transport
 S3-compatible object storage
@@ -77,7 +77,7 @@ var builder = DistributedApplication.CreateBuilder(args);
 var postgres = builder.AddPostgres("postgres")
     .WithDataVolume();
 
-var db = postgres.AddDatabase("documentrag");
+var db = postgres.AddDatabase("OpenRAG");
 
 var rabbitmq = builder.AddRabbitMQ("rabbitmq")
     .WithManagementPlugin();
@@ -93,7 +93,7 @@ var objectStorage = builder.AddContainer("object-storage", "minio/minio")
 var docling = builder.AddContainer("docling", "quay.io/docling-project/docling-serve")
     .WithHttpEndpoint(port: 5001, targetPort: 5001, name: "http");
 
-var api = builder.AddProject<Projects.DocumentRag_Api>("api")
+var api = builder.AddProject<Projects.OpenRAG_Api>("api")
     .WithReference(db)
     .WithReference(rabbitmq)
     .WithReference(objectStorage)
@@ -103,7 +103,7 @@ var api = builder.AddProject<Projects.DocumentRag_Api>("api")
     .WaitFor(objectStorage)
     .WaitFor(docling);
 
-var worker = builder.AddProject<Projects.DocumentRag_Worker>("worker")
+var worker = builder.AddProject<Projects.OpenRAG_Worker>("worker")
     .WithReference(db)
     .WithReference(rabbitmq)
     .WithReference(objectStorage)
@@ -143,7 +143,7 @@ Other S3-compatible stores
 Recommended logical connection names:
 
 ```text
-ConnectionStrings__documentrag
+ConnectionStrings__OpenRAG
 ConnectionStrings__rabbitmq
 ObjectStorage__Endpoint
 ObjectStorage__AccessKey
@@ -182,7 +182,7 @@ aspire run
 Fallback:
 
 ```bash
-dotnet run --project src/DocumentRag.AppHost
+dotnet run --project src/OpenRAG.AppHost
 ```
 
 ## Local development checklist

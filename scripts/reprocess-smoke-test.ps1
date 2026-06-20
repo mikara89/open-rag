@@ -1,3 +1,6 @@
+# OpenRAG Reprocess Smoke Test
+# Focuses on upload + reprocess flow.
+# For the comprehensive MVP smoke test, run: ./scripts/mvp-smoke-test.ps1
 param(
     [string]$ApiBaseUrl = "https://localhost:7063",
     [string]$FilePath = "README.md",

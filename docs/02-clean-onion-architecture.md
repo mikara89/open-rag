@@ -17,22 +17,22 @@ API / Worker
 More explicitly:
 
 ```text
-DocumentRag.Domain
+OpenRAG.Domain
   no dependencies
 
-DocumentRag.Application
+OpenRAG.Application
   depends on Domain
   defines use cases and interfaces
 
-DocumentRag.Infrastructure
+OpenRAG.Infrastructure
   depends on Application + Domain
   implements persistence, messaging, storage, AI, preprocessing, and vector search
 
-DocumentRag.Api
+OpenRAG.Api
   depends on Application + Infrastructure
   composition root for HTTP API
 
-DocumentRag.Worker
+OpenRAG.Worker
   depends on Application + Infrastructure
   composition root for background processing
 ```

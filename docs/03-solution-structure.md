@@ -3,27 +3,27 @@
 ## Proposed solution
 
 ```text
-DocumentRag.sln
+OpenRAG.sln
 
 src/
-  DocumentRag.Domain/
-  DocumentRag.Application/
-  DocumentRag.Infrastructure/
-  DocumentRag.Api/
-  DocumentRag.Worker/
-  DocumentRag.AppHost/
-  DocumentRag.ServiceDefaults/
+  OpenRAG.Domain/
+  OpenRAG.Application/
+  OpenRAG.Infrastructure/
+  OpenRAG.Api/
+  OpenRAG.Worker/
+  OpenRAG.AppHost/
+  OpenRAG.ServiceDefaults/
 
 tests/
-  DocumentRag.UnitTests/
-  DocumentRag.IntegrationTests/
-  DocumentRag.ArchitectureTests/
-  DocumentRag.RagEvaluationTests/
+  OpenRAG.UnitTests/
+  OpenRAG.IntegrationTests/
+  OpenRAG.ArchitectureTests/
+  OpenRAG.RagEvaluationTests/
 ```
 
 ## Project purposes
 
-### `DocumentRag.Domain`
+### `OpenRAG.Domain`
 
 Pure domain model.
 
@@ -35,7 +35,7 @@ DomainEvents/
 Rules/
 ```
 
-### `DocumentRag.Application`
+### `OpenRAG.Application`
 
 Use cases and interfaces.
 
@@ -72,7 +72,7 @@ DTOs/
 Validation/
 ```
 
-### `DocumentRag.Infrastructure`
+### `OpenRAG.Infrastructure`
 
 Concrete adapters.
 
@@ -109,7 +109,7 @@ Observability/
   CorrelationIdMiddleware.cs
 ```
 
-### `DocumentRag.Api`
+### `OpenRAG.Api`
 
 HTTP boundary.
 
@@ -124,7 +124,7 @@ OpenApi/
 Auth/
 ```
 
-### `DocumentRag.Worker`
+### `OpenRAG.Worker`
 
 Background processing boundary.
 
@@ -138,7 +138,7 @@ Consumers/
   DocumentClassificationRequestedConsumer.cs
 ```
 
-### `DocumentRag.AppHost`
+### `OpenRAG.AppHost`
 
 Aspire local development orchestrator.
 
@@ -155,7 +155,7 @@ Wire connection strings and environment variables
 Expose dashboard and logs
 ```
 
-### `DocumentRag.ServiceDefaults`
+### `OpenRAG.ServiceDefaults`
 
 Shared Aspire service defaults.
 

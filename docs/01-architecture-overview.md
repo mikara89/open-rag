@@ -21,15 +21,15 @@ Accept files in many formats
 ## Main runtime components
 
 ```text
-DocumentRag.Api
+OpenRAG.Api
   ASP.NET Core HTTP API.
   Handles upload, status, search, RAG question answering, and administration endpoints.
 
-DocumentRag.Worker
+OpenRAG.Worker
   .NET Worker Service.
   Handles CAP subscribers and background document processing.
 
-DocumentRag.AppHost
+OpenRAG.AppHost
   Aspire orchestration project for local development.
   Starts API, Worker, PostgreSQL, RabbitMQ, object storage, and Docling Serve.
 
@@ -75,8 +75,8 @@ Those dependencies belong in Infrastructure.
 
 ```text
 Aspire AppHost
-├── DocumentRag.Api
-├── DocumentRag.Worker
+├── OpenRAG.Api
+├── OpenRAG.Worker
 ├── PostgreSQL + pgvector
 ├── RabbitMQ
 ├── S3-compatible object storage
@@ -98,7 +98,7 @@ Observability stack
 
 ## Key warning
 
-CAP in-memory transport should only be used when publishers and subscribers run inside the same process. If `DocumentRag.Api` and `DocumentRag.Worker` are separate processes, use RabbitMQ or another real broker even in local development.
+CAP in-memory transport should only be used when publishers and subscribers run inside the same process. If `OpenRAG.Api` and `OpenRAG.Worker` are separate processes, use RabbitMQ or another real broker even in local development.
 
 ## Document lifecycle API
 
