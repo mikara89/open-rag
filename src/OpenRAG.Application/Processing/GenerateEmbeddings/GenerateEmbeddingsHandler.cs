@@ -1,4 +1,5 @@
 using Mediator;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenRAG.Application.Abstractions.AI;
 using OpenRAG.Application.Abstractions.Messaging;
@@ -24,6 +25,7 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
     private readonly IClock _clock;
     private readonly IUnitOfWork _unitOfWork;
     private readonly GenerateEmbeddingsOptions _options;
+    private readonly ILogger<GenerateEmbeddingsHandler> _logger;
 
     public GenerateEmbeddingsHandler(
         ICurrentTenant currentTenant,
@@ -35,7 +37,8 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
         IDocumentEventBus eventBus,
         IClock clock,
         IUnitOfWork unitOfWork,
-        IOptions<GenerateEmbeddingsOptions> options)
+        IOptions<GenerateEmbeddingsOptions> options,
+        ILogger<GenerateEmbeddingsHandler> logger)
     {
         _currentTenant = currentTenant;
         _documentChunkRepository = documentChunkRepository;
@@ -47,6 +50,7 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
         _clock = clock;
         _unitOfWork = unitOfWork;
         _options = options.Value;
+        _logger = logger;
     }
 
     public async ValueTask<GenerateEmbeddingsResponse> Handle(
@@ -73,35 +77,47 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
             tenantId, command.ProcessingRunId, cancellationToken);
 
         if (run is null)
-            throw new AppException($"Processing run '{command.ProcessingRunId}' not found.");
+        {
+            _logger.LogWarning(
+                "Embedding no-op: ProcessingRun not found. RunId={ProcessingRunId}, CorrelationId={CorrelationId}",
+                command.ProcessingRunId, command.CorrelationId);
+            return NoOpResult(command, "ProcessingRunNotFound");
+        }
 
-        // 3. Check if GenerateEmbeddings step already completed
+        // 3. Load document — no-op gracefully if missing or deleted
+        var document = await _documentRepository.GetByIdForUpdateAsync(
+            tenantId, command.DocumentId, cancellationToken);
+
+        if (document is null)
+        {
+            _logger.LogWarning(
+                "Embedding no-op: Document not found. DocumentId={DocumentId}, CorrelationId={CorrelationId}",
+                command.DocumentId, command.CorrelationId);
+            return NoOpResult(command, "DocumentNotFound");
+        }
+
+        if (document.Status == DocumentStatus.Deleted)
+        {
+            _logger.LogWarning(
+                "Embedding no-op: Document is deleted. DocumentId={DocumentId}, CorrelationId={CorrelationId}",
+                command.DocumentId, command.CorrelationId);
+            return NoOpResult(command, "DocumentDeleted");
+        }
+
+        // 4. Check if GenerateEmbeddings step already completed (idempotency within same run)
         var existingStep = await _processingRunRepository.GetStepForUpdateAsync(
             tenantId, command.ProcessingRunId, DocumentProcessingStepName.GenerateEmbeddings, cancellationToken);
 
         if (existingStep is not null && existingStep.Status == DocumentProcessingStepStatus.Completed)
         {
+            _logger.LogInformation(
+                "Embeddings already generated for this run. DocumentId={DocumentId}, VersionId={VersionId}, RunId={ProcessingRunId}",
+                command.DocumentId, command.VersionId, command.ProcessingRunId);
             return new GenerateEmbeddingsResponse(
                 DocumentId: command.DocumentId,
                 VersionId: command.VersionId,
                 EmbeddingCount: 0,
                 EmbeddingModel: "unknown",
-                EmbeddingDimensions: 0,
-                Status: "AlreadyEmbedded");
-        }
-
-        // 4. Check if embeddings already exist for version/model
-        var idempotencyModel = _options.Model;
-        var hasEmbeddings = await _documentEmbeddingRepository.AnyForVersionAsync(
-            tenantId, command.DocumentId, command.VersionId, idempotencyModel, cancellationToken);
-
-        if (hasEmbeddings)
-        {
-            return new GenerateEmbeddingsResponse(
-                DocumentId: command.DocumentId,
-                VersionId: command.VersionId,
-                EmbeddingCount: 0,
-                EmbeddingModel: idempotencyModel,
                 EmbeddingDimensions: 0,
                 Status: "AlreadyEmbedded");
         }
@@ -113,7 +129,15 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
         if (chunks.Count == 0)
             throw new AppException($"No chunks found for version '{command.VersionId}'. Chunking must complete first.");
 
-        // 6. Create or reuse processing step
+        // 6. Clean up old embeddings before recreating (safe idempotency)
+        await _documentEmbeddingRepository.DeleteByVersionAsync(
+            tenantId, command.DocumentId, command.VersionId, cancellationToken);
+
+        _logger.LogInformation(
+            "Deleted old embeddings for version. DocumentId={DocumentId}, VersionId={VersionId}",
+            command.DocumentId, command.VersionId);
+
+        // 7. Create or reuse processing step
         var step = existingStep ?? DocumentProcessingStep.Create(
             Guid.NewGuid(),
             tenantId,
@@ -131,10 +155,10 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
             await _processingRunRepository.AddStepAsync(step, cancellationToken);
         }
 
-        // 7. Mark step Running
+        // 8. Mark step Running (increments attempt count)
         step.Start();
 
-        // 8. Call IEmbeddingService for each chunk
+        // 9. Call IEmbeddingService for each chunk
         var embeddings = new List<DocumentEmbedding>();
         string actualModel = _options.Model;
         int actualDimensions = 0;
@@ -179,8 +203,19 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
 
             step.MarkFailed("EMBEDDING_FAILED", ex.Message);
 
+            // Mark document as Failed
+            if (document.Status != DocumentStatus.Ready
+                && document.Status != DocumentStatus.Deleted)
+            {
+                document.MarkFailed();
+            }
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await failureTransaction.CommitAsync(cancellationToken);
+
+            _logger.LogError(ex,
+                "Embedding generation failed: DocumentId={DocumentId}, VersionId={VersionId}, RunId={ProcessingRunId}",
+                command.DocumentId, command.VersionId, command.ProcessingRunId);
 
             return new GenerateEmbeddingsResponse(
                 DocumentId: command.DocumentId,
@@ -191,27 +226,25 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
                 Status: "Failed");
         }
 
-        // 9. Begin transaction
+        // 10. Begin transaction
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
-        // 10. Add embeddings
+        // 11. Add embeddings
         await _documentEmbeddingRepository.AddRangeAsync(embeddings, cancellationToken);
 
-        // 10b. Mark document as Ready (last pipeline step succeeded)
-        var document = await _documentRepository.GetByIdForUpdateAsync(
-            tenantId, command.DocumentId, cancellationToken);
-        if (document is not null && document.Status == Domain.Documents.DocumentStatus.Processing)
+        // 11b. Mark document as Ready (last pipeline step succeeded)
+        if (document.Status == DocumentStatus.Processing)
         {
             document.MarkReady();
         }
 
-        // 11. Mark step completed
+        // 12. Mark step completed
         step.MarkCompleted(actualModel);
 
-        // 12. SaveChanges
+        // 13. SaveChanges
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // 13. Publish DocumentEmbeddingsGeneratedEvent
+        // 14. Publish DocumentEmbeddingsGeneratedEvent
         var occurredAt = _clock.UtcNow;
         var generatedEvent = new DocumentEmbeddingsGeneratedEvent(
             TenantId: tenantId,
@@ -226,8 +259,12 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
 
         await _eventBus.PublishAsync("document.embeddings.generated", generatedEvent, cancellationToken);
 
-        // 14. Commit transaction
+        // 15. Commit transaction
         await transaction.CommitAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Embedding generation completed: DocumentId={DocumentId}, VersionId={VersionId}, Count={Count}, CorrelationId={CorrelationId}",
+            command.DocumentId, command.VersionId, embeddings.Count, command.CorrelationId);
 
         return new GenerateEmbeddingsResponse(
             DocumentId: command.DocumentId,
@@ -236,5 +273,16 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
             EmbeddingModel: actualModel,
             EmbeddingDimensions: actualDimensions,
             Status: "Embedded");
+    }
+
+    private static GenerateEmbeddingsResponse NoOpResult(GenerateEmbeddingsCommand command, string reason)
+    {
+        return new GenerateEmbeddingsResponse(
+            DocumentId: command.DocumentId,
+            VersionId: command.VersionId,
+            EmbeddingCount: 0,
+            EmbeddingModel: string.Empty,
+            EmbeddingDimensions: 0,
+            Status: reason);
     }
 }

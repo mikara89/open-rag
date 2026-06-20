@@ -61,9 +61,11 @@ public sealed class DoclingServeDocumentPreprocessor : IDocumentPreprocessor
             request.MimeType ?? "application/octet-stream");
         content.Add(streamContent, "files", fileName);
 
-        // Request Markdown and JSON output formats
-        content.Add(new StringContent("md"), "to_formats");
-        content.Add(new StringContent("json"), "to_formats");
+        // Request configured output formats
+        foreach (var format in _options.ToFormats)
+        {
+            content.Add(new StringContent(format), "to_formats");
+        }
 
         if (_options.EnableOcr)
             content.Add(new StringContent("true"), "do_ocr");

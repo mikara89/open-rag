@@ -176,8 +176,9 @@ public sealed class ChunkDocumentHandlerTests
     {
         fakes ??= CreateFakes();
         return new ChunkDocumentHandler(
-            fakes.Tenant, fakes.DocRepo, fakes.ChunkRepo, fakes.RunRepo,
-            fakes.FileStorage, fakes.Chunker, fakes.EventBus, fakes.Clock, fakes.UnitOfWork);
+            fakes.Tenant, fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo,
+            fakes.RunRepo, fakes.FileStorage, fakes.Chunker, fakes.EventBus, fakes.Clock, fakes.UnitOfWork,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<ChunkDocumentHandler>.Instance);
     }
 
     private static AllFakes CreateFakes(
@@ -193,6 +194,7 @@ public sealed class ChunkDocumentHandlerTests
 
         var docRepo = new FakeDocRepo(version);
         var chunkRepo = new FakeChunkRepo(hasChunks);
+        var embeddingRepo = new FakeEmbeddingRepo();
         var runRepo = new FakeRunRepo(run, null);
         var fileStorage = new FakeFileStorage();
         var chunker = new FakeChunker();
@@ -200,7 +202,7 @@ public sealed class ChunkDocumentHandlerTests
         var clock = new StubClock();
         var uow = new FakeUoW();
 
-        return new AllFakes(tenant, docRepo, chunkRepo, runRepo, fileStorage, chunker, eventBus, clock, uow);
+        return new AllFakes(tenant, docRepo, chunkRepo, embeddingRepo, runRepo, fileStorage, chunker, eventBus, clock, uow);
     }
 
     private static DocumentVersion CreateVersion(bool markdownMissing = false)
@@ -223,6 +225,7 @@ public sealed class ChunkDocumentHandlerTests
         StubTenant Tenant,
         FakeDocRepo DocRepo,
         FakeChunkRepo ChunkRepo,
+        FakeEmbeddingRepo EmbeddingRepo,
         FakeRunRepo RunRepo,
         FakeFileStorage FileStorage,
         FakeChunker Chunker,
@@ -334,7 +337,7 @@ public sealed class ChunkDocumentHandlerTests
             ReadCalled = true;
             var content = "# Test\n\nFake markdown content for chunking test.\n\nMore paragraphs.";
             return Task.FromResult<Stream>(new MemoryStream(
-                System.Text.Encoding.UTF8.GetBytes(content)));
+                global::System.Text.Encoding.UTF8.GetBytes(content)));
         }
 
         public Task DeleteAsync(string objectKey, CancellationToken ct = default) => Task.CompletedTask;

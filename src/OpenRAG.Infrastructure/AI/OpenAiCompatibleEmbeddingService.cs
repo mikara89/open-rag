@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
 using OpenRAG.Application.Abstractions.AI;
 using OpenRAG.Application.Common;
 
@@ -14,10 +15,12 @@ public sealed class OpenAiCompatibleEmbeddingService : IEmbeddingService
 {
     private readonly HttpClient _httpClient;
     private readonly OpenAiCompatibleEmbeddingOptions _options;
+    private readonly string? _resolvedApiKey;
 
     public OpenAiCompatibleEmbeddingService(
         HttpClient httpClient,
-        Microsoft.Extensions.Options.IOptions<OpenAiCompatibleEmbeddingOptions> options)
+        Microsoft.Extensions.Options.IOptions<OpenAiCompatibleEmbeddingOptions> options,
+        ILogger<OpenAiCompatibleEmbeddingService> logger)
     {
         _httpClient = httpClient;
         _options = options.Value;
@@ -27,6 +30,16 @@ public sealed class OpenAiCompatibleEmbeddingService : IEmbeddingService
 
         if (string.IsNullOrWhiteSpace(_options.Model))
             throw new InvalidOperationException("OpenAI-compatible embedding Model cannot be empty.");
+
+        _resolvedApiKey = SecureApiKeyResolver.ResolveApiKey(
+            _options.ApiKey,
+            _options.ApiKeyEnvironmentVariable,
+            ["OPENAI_API_KEY", "OPENRAG_EMBEDDINGS_API_KEY"],
+            logger);
+
+        logger.LogInformation(
+            "OpenAI-compatible embedding configured: BaseUrl={BaseUrl}, Model={Model}, ApiKey={ApiKeyStatus}",
+            _options.BaseUrl, _options.Model, SecureApiKeyResolver.KeyStatus(_resolvedApiKey));
     }
 
     public async Task<EmbeddingResult> GenerateEmbeddingAsync(
@@ -51,7 +64,10 @@ public sealed class OpenAiCompatibleEmbeddingService : IEmbeddingService
                 "application/json")
         };
 
-        httpRequest.Headers.Add("Authorization", $"Bearer {_options.ApiKey}");
+        if (!string.IsNullOrWhiteSpace(_resolvedApiKey))
+        {
+            httpRequest.Headers.Add("Authorization", $"Bearer {_resolvedApiKey}");
+        }
 
         HttpResponseMessage response;
         try

@@ -172,7 +172,8 @@ public sealed class GenerateEmbeddingsHandlerTests
         var options = Options.Create(new GenerateEmbeddingsOptions { Model = "mock-embedding-8" });
         return new GenerateEmbeddingsHandler(
             fakes.Tenant, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.DocRepo, fakes.RunRepo,
-            fakes.EmbeddingService, fakes.EventBus, fakes.Clock, fakes.UnitOfWork, options);
+            fakes.EmbeddingService, fakes.EventBus, fakes.Clock, fakes.UnitOfWork, options,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<GenerateEmbeddingsHandler>.Instance);
     }
 
     private static AllFakes CreateFakes(

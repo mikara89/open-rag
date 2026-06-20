@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
 using OpenRAG.Application.Abstractions.AI;
 using OpenRAG.Application.Common;
 
@@ -14,10 +15,12 @@ public sealed class OpenAiCompatibleChatCompletionService : IChatCompletionServi
 {
     private readonly HttpClient _httpClient;
     private readonly OpenAiCompatibleChatOptions _options;
+    private readonly string? _resolvedApiKey;
 
     public OpenAiCompatibleChatCompletionService(
         HttpClient httpClient,
-        Microsoft.Extensions.Options.IOptions<OpenAiCompatibleChatOptions> options)
+        Microsoft.Extensions.Options.IOptions<OpenAiCompatibleChatOptions> options,
+        ILogger<OpenAiCompatibleChatCompletionService> logger)
     {
         _httpClient = httpClient;
         _options = options.Value;
@@ -27,6 +30,16 @@ public sealed class OpenAiCompatibleChatCompletionService : IChatCompletionServi
 
         if (string.IsNullOrWhiteSpace(_options.Model))
             throw new InvalidOperationException("Chat completion Model cannot be empty.");
+
+        _resolvedApiKey = SecureApiKeyResolver.ResolveApiKey(
+            _options.ApiKey,
+            _options.ApiKeyEnvironmentVariable,
+            ["OPENAI_API_KEY", "DEEPSEEK_API_KEY", "OPENRAG_CHAT_API_KEY"],
+            logger);
+
+        logger.LogInformation(
+            "Chat completion configured: BaseUrl={BaseUrl}, Model={Model}, ApiKey={ApiKeyStatus}",
+            _options.BaseUrl, _options.Model, SecureApiKeyResolver.KeyStatus(_resolvedApiKey));
     }
 
     public async Task<ChatCompletionResult> CompleteAsync(
@@ -66,9 +79,9 @@ public sealed class OpenAiCompatibleChatCompletionService : IChatCompletionServi
                 "application/json")
         };
 
-        if (!string.IsNullOrWhiteSpace(_options.ApiKey))
+        if (!string.IsNullOrWhiteSpace(_resolvedApiKey))
         {
-            httpRequest.Headers.Add("Authorization", $"Bearer {_options.ApiKey}");
+            httpRequest.Headers.Add("Authorization", $"Bearer {_resolvedApiKey}");
         }
 
         HttpResponseMessage response;

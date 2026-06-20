@@ -170,7 +170,8 @@ public sealed class PreprocessDocumentHandlerTests
         fakes ??= CreateFakes();
         return new PreprocessDocumentHandler(
             fakes.Tenant, fakes.DocRepo, fakes.RunRepo, fakes.Preprocessor,
-            fakes.EventBus, fakes.Clock, fakes.UnitOfWork);
+            fakes.EventBus, fakes.Clock, fakes.UnitOfWork,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<PreprocessDocumentHandler>.Instance);
     }
 
     private static AllFakes CreateFakes(

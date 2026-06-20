@@ -11,4 +11,5 @@ public sealed class DoclingPreprocessorOptions
     public bool IncludeMarkdown { get; init; } = true;
     public bool IncludeJson { get; init; } = true;
     public bool EnableOcr { get; init; } = false;
+    public List<string> ToFormats { get; init; } = ["md", "json"];
 }

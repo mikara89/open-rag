@@ -145,7 +145,8 @@ public sealed class OpenAiCompatibleChatCompletionServiceTests
             Model = "deepseek-chat",
             TimeoutSeconds = 120
         });
-        return new OpenAiCompatibleChatCompletionService(httpClient, options);
+        return new OpenAiCompatibleChatCompletionService(httpClient, options,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<OpenAiCompatibleChatCompletionService>.Instance);
     }
 
     private static HttpMessageHandler CreateHandler(HttpResponseMessage response)

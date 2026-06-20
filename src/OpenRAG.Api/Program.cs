@@ -12,6 +12,7 @@ using OpenRAG.Application.Documents.ReprocessDocument;
 using OpenRAG.Application.Documents.UploadDocument;
 using OpenRAG.Application.DTOs;
 using OpenRAG.Application.Rag.AskQuestion;
+using OpenRAG.Application.System.GetProvidersDiagnostics;
 using OpenRAG.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -220,6 +221,18 @@ app.MapPost("/api/rag/ask", async (
     return Results.Ok(response);
 })
 .WithName("AskQuestion");
+
+// ── System diagnostics endpoint ──────────────────────────────────
+
+app.MapGet("/api/system/providers", async (
+    ISender sender,
+    CancellationToken cancellationToken) =>
+{
+    var query = new GetProvidersDiagnosticsQuery();
+    var response = await sender.Send(query, cancellationToken);
+    return Results.Ok(response);
+})
+.WithName("GetProvidersDiagnostics");
 
 app.Run();
 

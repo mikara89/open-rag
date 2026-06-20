@@ -196,7 +196,8 @@ public sealed class OpenAiCompatibleEmbeddingServiceTests
             TimeoutSeconds = 120
         });
 
-        return new OpenAiCompatibleEmbeddingService(httpClient, options);
+        return new OpenAiCompatibleEmbeddingService(httpClient, options,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<OpenAiCompatibleEmbeddingService>.Instance);
     }
 
     private static HttpMessageHandler CreateHandler(HttpResponseMessage response)

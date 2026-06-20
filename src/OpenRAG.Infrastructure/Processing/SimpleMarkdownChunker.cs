@@ -145,7 +145,7 @@ public sealed class ChunkingOptions
 {
     public const string SectionName = "Chunking";
 
-    public string Provider { get; set; } = "SimpleMarkdown";
+    public string Provider { get; set; } = "DoclingJson";
     public int MaxChunkCharacters { get; set; } = 2000;
     public int OverlapCharacters { get; set; } = 200;
     public bool UseDoclingJsonWhenAvailable { get; set; } = true;

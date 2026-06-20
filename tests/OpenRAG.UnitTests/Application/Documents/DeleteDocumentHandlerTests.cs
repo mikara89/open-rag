@@ -108,7 +108,9 @@ public sealed class DeleteDocumentHandlerTests
     private static DeleteDocumentHandler CreateHandler(Fakes fakes)
     {
         return new DeleteDocumentHandler(
-            fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.Tenant, fakes.Uow);
+            fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, new StubFileStorage(),
+            fakes.Tenant, fakes.Uow,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<DeleteDocumentHandler>.Instance);
     }
 
     private sealed class Fakes

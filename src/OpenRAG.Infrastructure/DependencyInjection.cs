@@ -2,6 +2,7 @@ using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using OpenRAG.Application.Abstractions.AI;
 using OpenRAG.Application.Abstractions.Messaging;
 using OpenRAG.Application.Abstractions.Persistence;
@@ -55,7 +56,8 @@ public static class DependencyInjection
 
         // Storage
         services.Configure<LocalFileStorageOptions>(
-            configuration.GetSection("Storage"));
+            configuration.GetSection(LocalFileStorageOptions.SectionName));
+        services.AddSingleton<IValidateOptions<LocalFileStorageOptions>, LocalFileStorageOptionsValidator>();
         services.AddSingleton<IFileStorage, LocalFileStorage>();
 
         // CAP with PostgreSQL storage + RabbitMQ transport
@@ -90,6 +92,7 @@ public static class DependencyInjection
         // Preprocessing — provider selection via configuration
         services.Configure<DoclingPreprocessorOptions>(
             configuration.GetSection(DoclingPreprocessorOptions.SectionName));
+        services.AddSingleton<IValidateOptions<DoclingPreprocessorOptions>, DoclingPreprocessorOptionsValidator>();
 
         var preprocessorProvider = configuration["Preprocessing:Docling:Provider"] ?? "Mock";
 
@@ -123,6 +126,7 @@ public static class DependencyInjection
         // Chunking — provider selection via configuration
         services.Configure<ChunkingOptions>(
             configuration.GetSection(ChunkingOptions.SectionName));
+        services.AddSingleton<IValidateOptions<ChunkingOptions>, ChunkingOptionsValidator>();
 
         var chunkingProvider = configuration["Chunking:Provider"] ?? "DoclingJson";
 
@@ -144,6 +148,7 @@ public static class DependencyInjection
         // AI — Embedding provider selection via configuration
         services.Configure<OpenAiCompatibleEmbeddingOptions>(
             configuration.GetSection(OpenAiCompatibleEmbeddingOptions.SectionName));
+        services.AddSingleton<IValidateOptions<OpenAiCompatibleEmbeddingOptions>, OpenAiCompatibleEmbeddingOptionsValidator>();
 
         // Configure Application-level embedding options from same section
         services.Configure<OpenRAG.Application.Processing.GenerateEmbeddings.GenerateEmbeddingsOptions>(
@@ -170,6 +175,7 @@ public static class DependencyInjection
         // Chat completion provider selection via configuration
         services.Configure<OpenAiCompatibleChatOptions>(
             configuration.GetSection(OpenAiCompatibleChatOptions.SectionName));
+        services.AddSingleton<IValidateOptions<OpenAiCompatibleChatOptions>, OpenAiCompatibleChatOptionsValidator>();
 
         var chatProvider = configuration["AI:Chat:Provider"] ?? "Mock";
 

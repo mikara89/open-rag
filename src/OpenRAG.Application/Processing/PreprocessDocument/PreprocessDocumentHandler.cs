@@ -1,4 +1,5 @@
 using Mediator;
+using Microsoft.Extensions.Logging;
 using OpenRAG.Application.Abstractions.Messaging;
 using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Processing;
@@ -7,6 +8,7 @@ using OpenRAG.Application.Abstractions.Time;
 using OpenRAG.Application.Common;
 using OpenRAG.Application.Messaging.Events;
 using OpenRAG.Domain.Common;
+using OpenRAG.Domain.Documents;
 using OpenRAG.Domain.Processing;
 
 namespace OpenRAG.Application.Processing.PreprocessDocument;
@@ -20,6 +22,7 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
     private readonly IDocumentEventBus _eventBus;
     private readonly IClock _clock;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ILogger<PreprocessDocumentHandler> _logger;
 
     public PreprocessDocumentHandler(
         ICurrentTenant currentTenant,
@@ -28,7 +31,8 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
         IDocumentPreprocessor documentPreprocessor,
         IDocumentEventBus eventBus,
         IClock clock,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        ILogger<PreprocessDocumentHandler> logger)
     {
         _currentTenant = currentTenant;
         _documentRepository = documentRepository;
@@ -37,6 +41,7 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
         _eventBus = eventBus;
         _clock = clock;
         _unitOfWork = unitOfWork;
+        _logger = logger;
     }
 
     public async ValueTask<PreprocessDocumentResponse> Handle(
@@ -58,23 +63,40 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
 
         var tenantId = _currentTenant.TenantId;
 
-        // 2. Load DocumentVersion for update (tracking query)
+        // 2. Load Document and Version — no-op gracefully if missing or deleted
         var version = await _documentRepository.GetVersionForUpdateAsync(
             tenantId, command.DocumentId, command.VersionId, cancellationToken);
 
         if (version is null)
-            throw new AppException($"Document version '{command.VersionId}' not found.");
+        {
+            _logger.LogWarning(
+                "Preprocess no-op: DocumentVersion not found. DocumentId={DocumentId}, VersionId={VersionId}, CorrelationId={CorrelationId}",
+                command.DocumentId, command.VersionId, command.CorrelationId);
+            return NoOpResult(command, "VersionNotFound");
+        }
 
-        // 2b. Load Document for update to mark it as Processing
         var document = await _documentRepository.GetByIdForUpdateAsync(
             tenantId, command.DocumentId, cancellationToken);
 
         if (document is null)
-            throw new AppException($"Document '{command.DocumentId}' not found.");
+        {
+            _logger.LogWarning(
+                "Preprocess no-op: Document not found. DocumentId={DocumentId}, CorrelationId={CorrelationId}",
+                command.DocumentId, command.CorrelationId);
+            return NoOpResult(command, "DocumentNotFound");
+        }
 
-        // 2c. Mark document as Processing if not already
-        if (document.Status == Domain.Documents.DocumentStatus.Uploaded
-            || document.Status == Domain.Documents.DocumentStatus.Failed)
+        if (document.Status == DocumentStatus.Deleted)
+        {
+            _logger.LogWarning(
+                "Preprocess no-op: Document is deleted. DocumentId={DocumentId}, CorrelationId={CorrelationId}",
+                command.DocumentId, command.CorrelationId);
+            return NoOpResult(command, "DocumentDeleted");
+        }
+
+        // 2b. Mark document as Processing if not already (safe for retries)
+        if (document.Status == DocumentStatus.Uploaded
+            || document.Status == DocumentStatus.Failed)
         {
             document.MarkProcessing();
         }
@@ -84,7 +106,12 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
             tenantId, command.ProcessingRunId, cancellationToken);
 
         if (run is null)
-            throw new AppException($"Processing run '{command.ProcessingRunId}' not found.");
+        {
+            _logger.LogWarning(
+                "Preprocess no-op: ProcessingRun not found. RunId={ProcessingRunId}, CorrelationId={CorrelationId}",
+                command.ProcessingRunId, command.CorrelationId);
+            return NoOpResult(command, "ProcessingRunNotFound");
+        }
 
         // 4. Check if preprocessing step already completed (idempotency)
         var existingStep = await _processingRunRepository.GetStepForUpdateAsync(
@@ -92,7 +119,9 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
 
         if (existingStep is not null && existingStep.Status == DocumentProcessingStepStatus.Completed)
         {
-            // Already done — return success without re-running
+            _logger.LogInformation(
+                "Preprocess already completed for this run. DocumentId={DocumentId}, VersionId={VersionId}, RunId={ProcessingRunId}",
+                command.DocumentId, command.VersionId, command.ProcessingRunId);
             return new PreprocessDocumentResponse(
                 DocumentId: command.DocumentId,
                 VersionId: command.VersionId,
@@ -119,12 +148,12 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
             await _processingRunRepository.AddStepAsync(step, cancellationToken);
         }
 
-        // 6. Mark step as running
+        // 6. Mark step as running (increments attempt count)
         step.Start();
 
         // 7. Mark version as preprocessing (if not already)
-        if (version.Status != Domain.Documents.DocumentVersionStatus.Preprocessing
-            && version.Status != Domain.Documents.DocumentVersionStatus.Preprocessed)
+        if (version.Status != DocumentVersionStatus.Preprocessing
+            && version.Status != DocumentVersionStatus.Preprocessed)
         {
             version.AttachDoclingArtifacts(
                 markdownObjectKey: "pending",
@@ -145,7 +174,6 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
         try
         {
             // 9. Call IDocumentPreprocessor (writes artifact files outside DB transaction)
-            // TODO: Add cleanup/compensation for object storage files if database transaction fails.
             preprocessResult = await _documentPreprocessor.PreprocessAsync(
                 preprocessRequest, cancellationToken);
         }
@@ -157,14 +185,25 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
             step.MarkFailed("PREPROCESS_FAILED", ex.Message);
 
             // Mark version as failed only if it's in a transient state
-            if (version.Status != Domain.Documents.DocumentVersionStatus.Preprocessed
-                && version.Status != Domain.Documents.DocumentVersionStatus.Deleted)
+            if (version.Status != DocumentVersionStatus.Preprocessed
+                && version.Status != DocumentVersionStatus.Deleted)
             {
                 version.MarkFailed();
             }
 
+            // Also mark document as Failed
+            if (document.Status != DocumentStatus.Ready
+                && document.Status != DocumentStatus.Deleted)
+            {
+                document.MarkFailed();
+            }
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await failureTransaction.CommitAsync(cancellationToken);
+
+            _logger.LogError(ex,
+                "Preprocess failed: DocumentId={DocumentId}, VersionId={VersionId}, RunId={ProcessingRunId}",
+                command.DocumentId, command.VersionId, command.ProcessingRunId);
 
             return new PreprocessDocumentResponse(
                 DocumentId: command.DocumentId,
@@ -210,11 +249,25 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
         // 16. Commit transaction
         await transaction.CommitAsync(cancellationToken);
 
+        _logger.LogInformation(
+            "Preprocess completed: DocumentId={DocumentId}, VersionId={VersionId}, CorrelationId={CorrelationId}",
+            command.DocumentId, command.VersionId, command.CorrelationId);
+
         return new PreprocessDocumentResponse(
             DocumentId: command.DocumentId,
             VersionId: command.VersionId,
             MarkdownObjectKey: preprocessResult.MarkdownObjectKey,
             JsonObjectKey: preprocessResult.JsonObjectKey,
             Status: "Preprocessed");
+    }
+
+    private static PreprocessDocumentResponse NoOpResult(PreprocessDocumentCommand command, string reason)
+    {
+        return new PreprocessDocumentResponse(
+            DocumentId: command.DocumentId,
+            VersionId: command.VersionId,
+            MarkdownObjectKey: string.Empty,
+            JsonObjectKey: string.Empty,
+            Status: reason);
     }
 }
