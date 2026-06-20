@@ -49,14 +49,15 @@ public sealed class GenerateEmbeddingsHandlerTests
     }
 
     [Fact]
-    public async Task Throws_when_processing_run_missing()
+    public async Task No_ops_when_processing_run_missing()
     {
         var fakes = CreateFakes(runMissing: true);
         var handler = CreateHandler(fakes);
         var cmd = new GenerateEmbeddingsCommand(DocId, VerId, RunId, "corr");
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
-        Assert.Contains("not found", ex.Message);
+        var response = await handler.Handle(cmd);
+
+        Assert.Equal("ProcessingRunNotFound", response.Status);
     }
 
     [Fact]
@@ -152,7 +153,7 @@ public sealed class GenerateEmbeddingsHandlerTests
     }
 
     [Fact]
-    public async Task Is_idempotent_when_embeddings_already_exist()
+    public async Task Deletes_old_embeddings_and_recreates_when_embeddings_exist()
     {
         var fakes = CreateFakes(hasEmbeddings: true);
         var handler = CreateHandler(fakes);
@@ -160,8 +161,9 @@ public sealed class GenerateEmbeddingsHandlerTests
 
         var response = await handler.Handle(cmd);
 
-        Assert.Equal("AlreadyEmbedded", response.Status);
-        Assert.Equal(0, fakes.EmbeddingService.CallCount); // Not re-invoked
+        // Old embeddings are deleted then new ones created
+        Assert.Equal("Embedded", response.Status);
+        Assert.True(fakes.EmbeddingService.CallCount > 0);
     }
 
     // ══ Helpers ═══════════════════════════════════════════════════

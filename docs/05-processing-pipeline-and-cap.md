@@ -287,6 +287,54 @@ The event chain preserves the existing flow:
 Preprocess → Chunk → Embed → Ready
 ```
 
+## Idempotency and Retries (MVP)
+
+### Handler safety guarantees
+
+All processing handlers (Preprocess, Chunk, Embeddings) are safe for duplicate event delivery:
+
+- **Missing document/version → no-op.** If the document or version has been deleted by the time a delayed/retried event arrives, the handler logs a warning and returns a no-op status (e.g., `DocumentNotFound`, `VersionNotFound`, `DocumentDeleted`). No exception is thrown.
+
+- **Step already completed → skip.** Each handler checks if the processing step for this run is already `Completed`. If so, it returns immediately without re-running the work.
+
+- **Clean-slate chunking.** Before creating new chunks, the handler deletes all existing chunks *and embeddings* for the version. This ensures a retry or rerun always starts from a consistent state — no duplicate chunks, no orphaned embeddings referencing deleted chunks.
+
+- **Clean-slate embeddings.** Before generating new embeddings, the handler deletes all existing embeddings for the version. Duplicate handler calls do not produce duplicate embeddings.
+
+- **Document marked Failed on error.** If preprocessing or chunking fails, both the version and the document are marked `Failed`. Previously only the version was marked failed; the document now reflects the failure for better visibility.
+
+- **Attempt count tracks retries.** Each call to `step.Start()` increments `AttemptCount`. A retry of a previously failed step (same run) will show `AttemptCount >= 2`.
+
+- **Source files preserved.** Original uploaded files are never deleted on failure. Only generated artifacts (chunks, embeddings) are cleaned up during retries.
+
+### Delete safety
+
+- **Delete rejects in-flight documents.** A document with status `Processing` cannot be deleted.
+- **Delete cascades data.** Embeddings → chunks → document, in a single transaction.
+- **Events after delete no-op.** If a document is deleted while a processing event is still in flight (e.g., CAP retry), the handler detects the deleted status and returns a no-op.
+- **Best-effort storage cleanup.** After the DB transaction commits, the handler attempts to delete generated Docling artifacts (Markdown + JSON) from physical storage. Failures are logged but never fail the operation.
+
+### Reprocess is the manual retry mechanism
+
+CAP retries are automatic for transient failures (e.g., RabbitMQ connectivity), but application-level retries for bad documents or provider errors are manual via `POST /api/documents/{id}/reprocess`:
+
+- Reprocess creates a **new** processing run.
+- The `forcePreprocess`, `forceChunk`, `forceEmbeddings` flags control which pipeline stages restart.
+- Chunks/embeddings are deleted before recreation when their respective force flags are set.
+- The original file and document record are preserved.
+
+### What happens when...
+
+| Scenario | Behavior |
+|----------|----------|
+| Same event delivered twice | Step-completion check skips the second delivery |
+| Preprocessing succeeds, chunking fails | Version marked Failed. Document marked Failed. Reprocess to retry. |
+| Chunks exist before chunking starts | Old chunks and embeddings are deleted, then new chunks are created |
+| Embeddings exist before embedding starts | Old embeddings are deleted, then new embeddings are created |
+| Document deleted while event in flight | Handler detects Deleted status and returns a no-op |
+| Storage write succeeds, DB save fails | Storage artifact may be orphaned (logged as TODO for future compensation) |
+| CAP retries a failed handler | Step attempt count increments; no duplicate data created |
+
 The first event published depends on flags:
 - `forcePreprocess=true` → `document.preprocess.requested`
 - `forcePreprocess=false, forceChunk=true` → `document.chunking.requested`

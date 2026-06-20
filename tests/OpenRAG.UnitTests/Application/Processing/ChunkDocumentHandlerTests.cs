@@ -49,14 +49,15 @@ public sealed class ChunkDocumentHandlerTests
     }
 
     [Fact]
-    public async Task Throws_when_version_missing()
+    public async Task No_ops_when_version_missing()
     {
         var fakes = CreateFakes(versionMissing: true);
         var handler = CreateHandler(fakes);
         var cmd = new ChunkDocumentCommand(DocId, VerId, RunId, "corr");
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
-        Assert.Contains("not found", ex.Message);
+        var response = await handler.Handle(cmd);
+
+        Assert.Equal("VersionNotFound", response.Status);
     }
 
     [Fact]
@@ -71,14 +72,15 @@ public sealed class ChunkDocumentHandlerTests
     }
 
     [Fact]
-    public async Task Throws_when_processing_run_missing()
+    public async Task No_ops_when_processing_run_missing()
     {
         var fakes = CreateFakes(runMissing: true);
         var handler = CreateHandler(fakes);
         var cmd = new ChunkDocumentCommand(DocId, VerId, RunId, "corr");
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
-        Assert.Contains("not found", ex.Message);
+        var response = await handler.Handle(cmd);
+
+        Assert.Equal("ProcessingRunNotFound", response.Status);
     }
 
     [Fact]
@@ -158,7 +160,7 @@ public sealed class ChunkDocumentHandlerTests
     }
 
     [Fact]
-    public async Task Is_idempotent_when_chunks_already_exist()
+    public async Task Deletes_old_chunks_and_recreates_when_chunks_exist()
     {
         var fakes = CreateFakes(hasChunks: true);
         var handler = CreateHandler(fakes);
@@ -166,8 +168,9 @@ public sealed class ChunkDocumentHandlerTests
 
         var response = await handler.Handle(cmd);
 
-        Assert.Equal("AlreadyChunked", response.Status);
-        Assert.False(fakes.Chunker.Called); // Chunker not re-invoked
+        // Old chunks are deleted then new ones are created
+        Assert.Equal("Chunked", response.Status);
+        Assert.True(fakes.Chunker.Called);
     }
 
     // ══ Helpers ═══════════════════════════════════════════════════
@@ -398,5 +401,37 @@ public sealed class ChunkDocumentHandlerTests
             public Task CommitAsync(CancellationToken ct = default) { _uow.TransactionCommitted = true; return Task.CompletedTask; }
             public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class FakeEmbeddingRepo : IDocumentEmbeddingRepository
+    {
+        public bool Deleted { get; private set; }
+
+        public Task AddRangeAsync(IReadOnlyCollection<DocumentEmbedding> embeddings, CancellationToken ct = default)
+            => Task.CompletedTask;
+
+        public Task<IReadOnlyList<DocumentEmbedding>> GetByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<DocumentEmbedding>>(Array.Empty<DocumentEmbedding>());
+
+        public Task<bool> AnyForVersionAsync(Guid tid, Guid did, Guid vid, string model, CancellationToken ct = default)
+            => Task.FromResult(false);
+
+        public Task<int> CountByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
+            => Task.FromResult(0);
+
+        public Task<DocumentEmbeddingMetadata?> GetMetadataByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
+            => Task.FromResult<DocumentEmbeddingMetadata?>(null);
+
+        public Task DeleteByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
+        {
+            Deleted = true;
+            return Task.CompletedTask;
+        }
+
+        public Task<ChunkListResult> ListByVersionAsync(Guid tid, Guid did, Guid vid, int pn, int ps, string? s, string? st, int? pf, CancellationToken ct = default)
+            => Task.FromResult(new ChunkListResult(Array.Empty<DocumentChunk>(), pn, ps, 0));
+
+        public Task<DocumentChunk?> GetByIdForVersionAsync(Guid tid, Guid did, Guid vid, Guid cid, CancellationToken ct = default)
+            => Task.FromResult<DocumentChunk?>(null);
     }
 }

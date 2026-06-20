@@ -1,5 +1,6 @@
 using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Security;
+using OpenRAG.Application.Abstractions.Storage;
 using OpenRAG.Application.Common;
 using OpenRAG.Application.Documents.DeleteDocument;
 using OpenRAG.Domain.Documents;
@@ -205,5 +206,17 @@ public sealed class DeleteDocumentHandlerTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         public Task CommitAsync(CancellationToken ct = default) => Task.CompletedTask;
         public Task RollbackAsync(CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    private sealed class StubFileStorage : IFileStorage
+    {
+        public Task<StoredObjectResult> SaveAsync(Stream content, string objectKey, string contentType, CancellationToken ct = default)
+            => Task.FromResult(new StoredObjectResult("local", objectKey, contentType, 0, null, null));
+
+        public Task<Stream> OpenReadAsync(string objectKey, CancellationToken ct = default)
+            => Task.FromResult<Stream>(new MemoryStream());
+
+        public Task DeleteAsync(string objectKey, CancellationToken ct = default)
+            => Task.CompletedTask;
     }
 }

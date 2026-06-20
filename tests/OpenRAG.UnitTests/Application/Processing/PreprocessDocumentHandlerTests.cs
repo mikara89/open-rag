@@ -48,25 +48,27 @@ public sealed class PreprocessDocumentHandlerTests
     }
 
     [Fact]
-    public async Task Throws_when_version_is_missing()
+    public async Task No_ops_when_version_is_missing()
     {
         var fakes = CreateFakes(versionMissing: true);
         var handler = CreateHandler(fakes);
         var cmd = new PreprocessDocumentCommand(DocId, VerId, RunId, "corr");
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
-        Assert.Contains("not found", ex.Message);
+        var response = await handler.Handle(cmd);
+
+        Assert.Equal("VersionNotFound", response.Status);
     }
 
     [Fact]
-    public async Task Throws_when_processing_run_is_missing()
+    public async Task No_ops_when_processing_run_is_missing()
     {
         var fakes = CreateFakes(runMissing: true);
         var handler = CreateHandler(fakes);
         var cmd = new PreprocessDocumentCommand(DocId, VerId, RunId, "corr");
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
-        Assert.Contains("not found", ex.Message);
+        var response = await handler.Handle(cmd);
+
+        Assert.Equal("ProcessingRunNotFound", response.Status);
     }
 
     [Fact]
@@ -163,6 +165,33 @@ public sealed class PreprocessDocumentHandlerTests
         Assert.False(fakes.Preprocessor.Called); // Preprocessor not re-invoked
     }
 
+    [Fact]
+    public async Task Marks_document_Failed_when_preprocessing_fails()
+    {
+        var fakes = CreateFakes();
+        fakes.Preprocessor.ShouldThrow = true;
+        var handler = CreateHandler(fakes);
+        var cmd = new PreprocessDocumentCommand(DocId, VerId, RunId, "corr");
+
+        var response = await handler.Handle(cmd);
+
+        Assert.Equal("Failed", response.Status);
+        Assert.Equal(DocumentStatus.Failed, fakes.DocRepo.LastDocumentStatus);
+    }
+
+    [Fact]
+    public async Task Attempt_count_increments_on_retry()
+    {
+        var fakes = CreateFakes(stepStatus: DocumentProcessingStepStatus.Failed);
+        var handler = CreateHandler(fakes);
+        var cmd = new PreprocessDocumentCommand(DocId, VerId, RunId, "corr");
+
+        var response = await handler.Handle(cmd);
+
+        Assert.Equal("Preprocessed", response.Status);
+        Assert.True(fakes.RunRepo.LastStepAttemptCount >= 2, "Attempt count should increment on retry");
+    }
+
     // ══ Helpers ═══════════════════════════════════════════════════
 
     private static PreprocessDocumentHandler CreateHandler(AllFakes? fakes = null)
@@ -192,6 +221,11 @@ public sealed class PreprocessDocumentHandlerTests
             {
                 step.Start();
                 step.MarkCompleted("output-hash");
+            }
+            else if (stepStatus == DocumentProcessingStepStatus.Failed)
+            {
+                step.Start(); // attempt 1
+                step.MarkFailed("ERR", "Simulated prior failure");
             }
         }
 
@@ -241,13 +275,24 @@ public sealed class PreprocessDocumentHandlerTests
     private sealed class FakeDocRepo : IDocumentRepository
     {
         private readonly DocumentVersion? _version;
+        private Document? _lastDocument;
+
         public FakeDocRepo(DocumentVersion? version) => _version = version;
+
+        /// <summary>
+        /// The status of the last document returned from GetByIdForUpdateAsync
+        /// after the handler has finished mutating it.
+        /// </summary>
+        public DocumentStatus? LastDocumentStatus => _lastDocument?.Status;
 
         public Task AddAsync(Document doc, CancellationToken ct = default) => Task.CompletedTask;
         public Task<Document?> GetByIdAsync(Guid tid, Guid did, CancellationToken ct = default) => Task.FromResult<Document?>(null);
         public Task<Document?> GetByIdWithVersionsAsync(Guid tid, Guid did, CancellationToken ct = default) => Task.FromResult<Document?>(null);
         public Task<Document?> GetByIdForUpdateAsync(Guid tid, Guid did, CancellationToken ct = default)
-            => Task.FromResult<Document?>(Document.Create(did, tid, "test", "test.md", Guid.NewGuid()));
+        {
+            _lastDocument = Document.Create(did, tid, "test", "test.md", Guid.NewGuid());
+            return Task.FromResult<Document?>(_lastDocument);
+        }
         public Task<DocumentVersion?> GetVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) => Task.FromResult<DocumentVersion?>(null);
         public Task<DocumentVersion?> GetVersionForUpdateAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) => Task.FromResult(_version);
         public Task<bool> ExistsAsync(Guid tid, Guid did, CancellationToken ct = default) => Task.FromResult(true);
@@ -263,6 +308,9 @@ public sealed class PreprocessDocumentHandlerTests
         private readonly DocumentProcessingRun? _run;
         private readonly DocumentProcessingStep? _step;
         public FakeRunRepo(DocumentProcessingRun? run, DocumentProcessingStep? step) { _run = run; _step = step; }
+
+        /// <summary>The step's attempt count after handler mutations.</summary>
+        public int LastStepAttemptCount => _step?.AttemptCount ?? 0;
 
         public Task AddAsync(DocumentProcessingRun r, CancellationToken ct = default) => Task.CompletedTask;
         public Task<DocumentProcessingRun?> GetByIdAsync(Guid tid, Guid rid, CancellationToken ct = default) => Task.FromResult<DocumentProcessingRun?>(null);
