@@ -96,4 +96,53 @@ public sealed class EfDocumentRepository : IDocumentRepository
                 d => d.TenantId == tenantId && d.Id == documentId,
                 cancellationToken);
     }
+
+    public async Task<DocumentListResult> ListAsync(
+        Guid tenantId,
+        int pageNumber,
+        int pageSize,
+        string? statusFilter = null,
+        string? search = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _dbContext.Documents
+            .AsNoTracking()
+            .Where(d => d.TenantId == tenantId);
+
+        if (!string.IsNullOrWhiteSpace(statusFilter))
+        {
+            query = query.Where(d => d.Status.ToString() == statusFilter);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(d => d.OriginalFileName.Contains(search));
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        var items = await query
+            .OrderByDescending(d => d.CreatedAt)
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .Select(d => new DocumentListItem(
+                d.Id,
+                d.OriginalFileName,
+                string.Empty, // ContentType not directly on Document
+                d.Status.ToString(),
+                d.CreatedAt,
+                d.UpdatedAt,
+                d.CurrentVersionId))
+            .ToListAsync(cancellationToken);
+
+        return new DocumentListResult(items, pageNumber, pageSize, totalCount);
+    }
+
+    public Task DeleteAsync(
+        Document document,
+        CancellationToken cancellationToken = default)
+    {
+        _dbContext.Documents.Remove(document);
+        return Task.CompletedTask;
+    }
 }

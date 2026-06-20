@@ -1,6 +1,9 @@
 using Mediator;
 using OpenRAG.Application;
+using OpenRAG.Application.Documents.DeleteDocument;
+using OpenRAG.Application.Documents.GetDocumentDetail;
 using OpenRAG.Application.Documents.GetDocumentStatus;
+using OpenRAG.Application.Documents.ListDocuments;
 using OpenRAG.Application.Documents.ReprocessDocument;
 using OpenRAG.Application.Documents.UploadDocument;
 using OpenRAG.Application.DTOs;
@@ -27,6 +30,28 @@ app.UseHttpsRedirection();
 
 // ── Document endpoints ───────────────────────────────────────────
 
+// List documents
+app.MapGet("/api/documents", async (
+    int? pageNumber,
+    int? pageSize,
+    string? status,
+    string? search,
+    ISender sender,
+    CancellationToken cancellationToken) =>
+{
+    var query = new ListDocumentsQuery(
+        TenantId: Guid.Empty, // filled by handler via ICurrentTenant
+        PageNumber: pageNumber ?? 1,
+        PageSize: pageSize ?? 20,
+        Status: status,
+        Search: search);
+
+    var response = await sender.Send(query, cancellationToken);
+    return Results.Ok(response);
+})
+.WithName("ListDocuments");
+
+// Upload document
 app.MapPost("/api/documents/upload", async (
     IFormFile file,
     ISender sender,
@@ -84,6 +109,32 @@ app.MapPost("/api/documents/{documentId:guid}/reprocess", async (
     return Results.Accepted($"/api/documents/{response.DocumentId}/status", response);
 })
 .WithName("ReprocessDocument");
+
+// ── Document detail endpoint ──────────────────────────────────────
+
+app.MapGet("/api/documents/{documentId:guid}", async (
+    Guid documentId,
+    ISender sender,
+    CancellationToken cancellationToken) =>
+{
+    var query = new GetDocumentDetailQuery(documentId);
+    var response = await sender.Send(query, cancellationToken);
+    return Results.Ok(response);
+})
+.WithName("GetDocumentDetail");
+
+// ── Delete document endpoint ──────────────────────────────────────
+
+app.MapDelete("/api/documents/{documentId:guid}", async (
+    Guid documentId,
+    ISender sender,
+    CancellationToken cancellationToken) =>
+{
+    var command = new DeleteDocumentCommand(documentId);
+    var response = await sender.Send(command, cancellationToken);
+    return Results.NoContent();
+})
+.WithName("DeleteDocument");
 
 // ── RAG endpoints ─────────────────────────────────────────────────
 

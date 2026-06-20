@@ -226,6 +226,11 @@ public sealed class GetDocumentStatusHandlerTests
         public Task<DocumentVersion?> GetVersionAsync(Guid tenantId, Guid documentId, Guid versionId, CancellationToken ct = default) => Task.FromResult<DocumentVersion?>(null);
         public Task<DocumentVersion?> GetVersionForUpdateAsync(Guid tenantId, Guid documentId, Guid versionId, CancellationToken ct = default) => Task.FromResult<DocumentVersion?>(null);
         public Task<bool> ExistsAsync(Guid tenantId, Guid documentId, CancellationToken ct = default) => Task.FromResult(_document is not null);
+
+        public Task<DocumentListResult> ListAsync(Guid tid, int pn, int ps, string? sf, string? s, CancellationToken ct = default)
+            => Task.FromResult(new DocumentListResult(Array.Empty<DocumentListItem>(), pn, ps, 0));
+
+        public Task DeleteAsync(Document doc, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     private sealed class FakeChunkRepo : IDocumentChunkRepository

@@ -99,3 +99,60 @@ Observability stack
 ## Key warning
 
 CAP in-memory transport should only be used when publishers and subscribers run inside the same process. If `DocumentRag.Api` and `DocumentRag.Worker` are separate processes, use RabbitMQ or another real broker even in local development.
+
+## Document lifecycle API
+
+### List documents
+
+```
+GET /api/documents?pageNumber=1&pageSize=20&status=Ready&search=README
+```
+
+Returns paginated, tenant-filtered document list with chunk/embedding counts.
+
+### Upload document
+
+```
+POST /api/documents/upload
+Content-Type: multipart/form-data
+```
+
+### Get document detail
+
+```
+GET /api/documents/{documentId}
+```
+
+Returns document metadata, latest version with artifact presence flags, and chunk/embedding counts. Returns 404 for missing or wrong-tenant documents.
+
+### Get document processing status
+
+```
+GET /api/documents/{documentId}/status
+```
+
+Returns detailed processing status with per-version step tracking.
+
+### Reprocess document
+
+```
+POST /api/documents/{documentId}/reprocess
+{ "forcePreprocess": true, "forceChunk": true, "forceEmbeddings": true }
+```
+
+Triggers full or partial reprocessing. Use after changing preprocessing, chunking, or embedding settings.
+
+### Delete document
+
+```
+DELETE /api/documents/{documentId}
+```
+
+Cascading delete: removes embeddings, chunks, and document/versions. Returns 204 No Content. Rejects deletion while processing.
+
+### Ask RAG question
+
+```
+POST /api/rag/ask
+{ "question": "...", "tenantId": "...", "topK": 5, "model": "mock-chat" }
+```

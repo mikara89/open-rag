@@ -1,0 +1,29 @@
+using Mediator;
+
+namespace OpenRAG.Application.Documents.GetDocumentDetail;
+
+public sealed record GetDocumentDetailQuery(
+    Guid DocumentId
+) : IRequest<GetDocumentDetailResponse>;
+
+public sealed record GetDocumentDetailResponse(
+    Guid DocumentId,
+    string FileName,
+    string Status,
+    DateTime CreatedAt,
+    DateTime UpdatedAt,
+    DocumentDetailVersionDto? LatestVersion
+);
+
+public sealed record DocumentDetailVersionDto(
+    Guid VersionId,
+    int VersionNumber,
+    bool HasSourceFile,
+    bool HasMarkdownArtifact,
+    bool HasJsonArtifact,
+    int ChunkCount,
+    int EmbeddingCount,
+    string? EmbeddingProvider,
+    string? EmbeddingModel,
+    int? EmbeddingDimensions
+);
