@@ -241,3 +241,68 @@ public sealed class DocumentPreprocessRequestedConsumer
 ```
 
 The workflow belongs in Application handlers, not in CAP subscriber classes.
+
+## Reprocessing a document
+
+Use the reprocess endpoint after changing preprocessing, chunking, or embedding settings for an existing document.
+
+### Endpoint
+
+```
+POST /api/documents/{documentId}/reprocess
+```
+
+Request body:
+
+```json
+{
+  "forcePreprocess": true,
+  "forceChunk": true,
+  "forceEmbeddings": true
+}
+```
+
+Response:
+
+```json
+{
+  "documentId": "33333333-3333-3333-3333-333333333333",
+  "versionId": "44444444-4444-4444-4444-444444444444",
+  "status": "Processing",
+  "correlationId": "abc123..."
+}
+```
+
+### Behavior
+
+| Flag | Action |
+|------|--------|
+| `forcePreprocess` | Clears old preprocessing references, enqueues preprocessing via `document.preprocess.requested` |
+| `forceChunk` | Deletes existing chunks for the version, enqueues chunking |
+| `forceEmbeddings` | Deletes existing embeddings for the version, enqueues embedding generation |
+
+The event chain preserves the existing flow:
+
+```
+Preprocess → Chunk → Embed → Ready
+```
+
+The first event published depends on flags:
+- `forcePreprocess=true` → `document.preprocess.requested`
+- `forcePreprocess=false, forceChunk=true` → `document.chunking.requested`
+- `only forceEmbeddings=true` → `document.embeddings.requested`
+
+### Idempotency
+
+- The original uploaded file is never deleted.
+- The document record is preserved.
+- The same document and version are reused.
+- Calling reprocess again while processing returns a 409-style conflict.
+- Deleting chunks/embeddings when none exist is safe (no-op).
+
+### Use cases
+
+- Changed preprocessing provider (e.g. Mock → Docling)
+- Updated Docling options or extraction schema
+- Different chunking provider or parameters
+- New embedding model or provider

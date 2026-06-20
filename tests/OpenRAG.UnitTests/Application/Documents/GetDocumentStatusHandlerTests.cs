@@ -238,6 +238,8 @@ public sealed class GetDocumentStatusHandlerTests
             => Task.FromResult<IReadOnlyList<DocumentChunk>>(Array.Empty<DocumentChunk>());
         public Task<bool> AnyForVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) => Task.FromResult(_count > 0);
         public Task<int> CountByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) => Task.FromResult(_count);
+
+        public Task DeleteByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     private sealed class FakeEmbeddingRepo : IDocumentEmbeddingRepository
@@ -265,5 +267,7 @@ public sealed class GetDocumentStatusHandlerTests
             return Task.FromResult<DocumentEmbeddingMetadata?>(
                 new DocumentEmbeddingMetadata(_provider, _model!, _dimensions!.Value, "v1", _count));
         }
+
+        public Task DeleteByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) => Task.CompletedTask;
     }
 }

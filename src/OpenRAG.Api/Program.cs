@@ -1,7 +1,9 @@
 using Mediator;
 using OpenRAG.Application;
 using OpenRAG.Application.Documents.GetDocumentStatus;
+using OpenRAG.Application.Documents.ReprocessDocument;
 using OpenRAG.Application.Documents.UploadDocument;
+using OpenRAG.Application.DTOs;
 using OpenRAG.Application.Rag.AskQuestion;
 using OpenRAG.Infrastructure;
 
@@ -58,6 +60,30 @@ app.MapGet("/api/documents/{documentId:guid}/status", async (
     return Results.Ok(response);
 })
 .WithName("GetDocumentStatus");
+
+// ── Reprocess endpoint ───────────────────────────────────────────
+
+app.MapPost("/api/documents/{documentId:guid}/reprocess", async (
+    Guid documentId,
+    ReprocessDocumentRequest request,
+    ISender sender,
+    CancellationToken cancellationToken) =>
+{
+    var correlationId = Guid.NewGuid().ToString("N");
+
+    var command = new ReprocessDocumentCommand(
+        TenantId: Guid.Empty, // filled by handler via ICurrentTenant
+        DocumentId: documentId,
+        ForcePreprocess: request.ForcePreprocess,
+        ForceChunk: request.ForceChunk,
+        ForceEmbeddings: request.ForceEmbeddings,
+        CorrelationId: correlationId);
+
+    var response = await sender.Send(command, cancellationToken);
+
+    return Results.Accepted($"/api/documents/{response.DocumentId}/status", response);
+})
+.WithName("ReprocessDocument");
 
 // ── RAG endpoints ─────────────────────────────────────────────────
 

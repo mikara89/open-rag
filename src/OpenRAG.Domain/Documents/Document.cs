@@ -121,6 +121,27 @@ public sealed class Document : Entity
         UpdatedAt = DateTime.UtcNow;
     }
 
+    /// <summary>
+    /// Transitions the document back to Processing from Ready (or Failed)
+    /// for reprocessing. Does not change other state.
+    /// </summary>
+    public void MarkReprocessing()
+    {
+        if (Status == DocumentStatus.Deleted)
+        {
+            throw new DomainException("Cannot reprocess a deleted document.");
+        }
+
+        if (Status != DocumentStatus.Ready && Status != DocumentStatus.Failed)
+        {
+            throw new DomainException(
+                $"Cannot transition document from {Status} to Processing for reprocessing. Only Ready or Failed documents can be reprocessed.");
+        }
+
+        Status = DocumentStatus.Processing;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
     public void MarkFailed()
     {
         if (Status == DocumentStatus.Deleted)

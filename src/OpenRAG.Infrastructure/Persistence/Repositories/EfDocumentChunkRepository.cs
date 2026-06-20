@@ -62,4 +62,19 @@ public sealed class EfDocumentChunkRepository : IDocumentChunkRepository
                              && c.VersionId == versionId,
                 cancellationToken);
     }
+
+    public async Task DeleteByVersionAsync(
+        Guid tenantId,
+        Guid documentId,
+        Guid versionId,
+        CancellationToken cancellationToken = default)
+    {
+        var chunks = await _dbContext.DocumentChunks
+            .Where(c => c.TenantId == tenantId
+                        && c.DocumentId == documentId
+                        && c.VersionId == versionId)
+            .ToListAsync(cancellationToken);
+
+        _dbContext.DocumentChunks.RemoveRange(chunks);
+    }
 }

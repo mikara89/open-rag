@@ -65,6 +65,21 @@ public sealed class EfDocumentEmbeddingRepository : IDocumentEmbeddingRepository
                 cancellationToken);
     }
 
+    public async Task DeleteByVersionAsync(
+        Guid tenantId,
+        Guid documentId,
+        Guid versionId,
+        CancellationToken cancellationToken = default)
+    {
+        var embeddings = await _dbContext.DocumentEmbeddings
+            .Where(e => e.TenantId == tenantId
+                        && e.DocumentId == documentId
+                        && e.VersionId == versionId)
+            .ToListAsync(cancellationToken);
+
+        _dbContext.DocumentEmbeddings.RemoveRange(embeddings);
+    }
+
     public async Task<DocumentEmbeddingMetadata?> GetMetadataByVersionAsync(
         Guid tenantId,
         Guid documentId,

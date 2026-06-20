@@ -288,6 +288,9 @@ public sealed class ChunkDocumentHandlerTests
 
         public Task<int> CountByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
             => Task.FromResult(_hasChunks ? 1 : 0);
+
+        public Task DeleteByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
+            => Task.CompletedTask;
     }
 
     private sealed class FakeRunRepo : IProcessingRunRepository

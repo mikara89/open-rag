@@ -25,4 +25,10 @@ public interface IDocumentChunkRepository
         Guid documentId,
         Guid versionId,
         CancellationToken cancellationToken = default);
+
+    Task DeleteByVersionAsync(
+        Guid tenantId,
+        Guid documentId,
+        Guid versionId,
+        CancellationToken cancellationToken = default);
 }

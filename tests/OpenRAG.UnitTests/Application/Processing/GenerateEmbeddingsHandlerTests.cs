@@ -245,6 +245,9 @@ public sealed class GenerateEmbeddingsHandlerTests
             => Task.FromResult(_chunks.Count > 0);
         public Task<int> CountByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
             => Task.FromResult(_chunks.Count);
+
+        public Task DeleteByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
+            => Task.CompletedTask;
     }
 
     private sealed class FakeDocRepo : IDocumentRepository
@@ -291,6 +294,9 @@ public sealed class GenerateEmbeddingsHandlerTests
 
         public Task<DocumentEmbeddingMetadata?> GetMetadataByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
             => Task.FromResult<DocumentEmbeddingMetadata?>(null);
+
+        public Task DeleteByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
+            => Task.CompletedTask;
     }
 
     private sealed class FakeRunRepo : IProcessingRunRepository
