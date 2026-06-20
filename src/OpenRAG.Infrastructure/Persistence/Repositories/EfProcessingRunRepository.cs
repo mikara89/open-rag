@@ -78,4 +78,31 @@ public sealed class EfProcessingRunRepository : IProcessingRunRepository
                      && s.StepName == stepName,
                 cancellationToken);
     }
+
+    public async Task<IReadOnlyList<DocumentProcessingRun>> GetRunsByDocumentAsync(
+        Guid tenantId,
+        Guid documentId,
+        Guid versionId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.DocumentProcessingRuns
+            .AsNoTracking()
+            .Where(r => r.TenantId == tenantId
+                        && r.DocumentId == documentId
+                        && r.VersionId == versionId)
+            .OrderByDescending(r => r.StartedAt)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<DocumentProcessingStep>> GetStepsByRunAsync(
+        Guid tenantId,
+        Guid processingRunId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.DocumentProcessingSteps
+            .AsNoTracking()
+            .Where(s => s.TenantId == tenantId && s.ProcessingRunId == processingRunId)
+            .OrderBy(s => s.StepName)
+            .ToListAsync(cancellationToken);
+    }
 }

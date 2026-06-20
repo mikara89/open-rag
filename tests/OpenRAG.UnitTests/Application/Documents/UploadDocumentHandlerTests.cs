@@ -448,6 +448,12 @@ public sealed class UploadDocumentHandlerTests
 
         public Task<DocumentProcessingStep?> GetStepForUpdateAsync(Guid tenantId, Guid processingRunId, DocumentProcessingStepName stepName, CancellationToken ct = default)
             => Task.FromResult<DocumentProcessingStep?>(null);
+
+        public Task<IReadOnlyList<DocumentProcessingRun>> GetRunsByDocumentAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<DocumentProcessingRun>>(Array.Empty<DocumentProcessingRun>());
+
+        public Task<IReadOnlyList<DocumentProcessingStep>> GetStepsByRunAsync(Guid tid, Guid rid, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<DocumentProcessingStep>>(Array.Empty<DocumentProcessingStep>());
     }
 
     private sealed class FakeDocumentEventBus : IDocumentEventBus

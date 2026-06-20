@@ -3,6 +3,7 @@ using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Common;
 using OpenRAG.Application.Documents.GetDocumentStatus;
 using OpenRAG.Domain.Documents;
+using OpenRAG.Domain.Processing;
 
 namespace OpenRAG.UnitTests.Application.Documents;
 
@@ -163,10 +164,64 @@ public sealed class GetDocumentStatusHandlerTests
         Assert.Contains("DocumentId", ex.Message);
     }
 
+    // ── Processing history tests ───────────────────────────────────
+
+    [Fact]
+    public async Task Includes_processing_runs_in_response()
+    {
+        var run = DocumentProcessingRun.Create(
+            Guid.NewGuid(), TenantId, Guid.NewGuid(), Guid.NewGuid(),
+            ProcessingRunReason.InitialUpload, "corr-123");
+        var fakes = CreateFakes(runs: new[] { run });
+        var handler = CreateHandler(fakes);
+
+        var response = await handler.Handle(new GetDocumentStatusQuery(fakes.Document.Id, TenantId));
+
+        Assert.NotEmpty(response.ProcessingRuns);
+        Assert.Equal(run.Id, response.ProcessingRuns[0].RunId);
+        Assert.Equal("InitialUpload", response.ProcessingRuns[0].Reason);
+        Assert.Equal("corr-123", response.ProcessingRuns[0].CorrelationId);
+    }
+
+    [Fact]
+    public async Task Includes_step_history_in_runs()
+    {
+        var run = DocumentProcessingRun.Create(
+            Guid.NewGuid(), TenantId, Guid.NewGuid(), Guid.NewGuid(),
+            ProcessingRunReason.InitialUpload, "corr-456");
+        var step = DocumentProcessingStep.Create(
+            Guid.NewGuid(), TenantId, run.DocumentId, run.VersionId, run.Id,
+            DocumentProcessingStepName.Preprocess, 3, "hash-abc", "MockPreprocessor", "1.0");
+        step.Start();
+        var fakes = CreateFakes(runs: new[] { run }, steps: new Dictionary<Guid, IReadOnlyList<DocumentProcessingStep>>
+        {
+            [run.Id] = new[] { step }
+        });
+        var handler = CreateHandler(fakes);
+
+        var response = await handler.Handle(new GetDocumentStatusQuery(fakes.Document.Id, TenantId));
+
+        Assert.NotEmpty(response.ProcessingRuns);
+        var runDto = response.ProcessingRuns[0];
+        Assert.NotEmpty(runDto.Steps);
+        Assert.Equal("Preprocess", runDto.Steps[0].Name);
+    }
+
+    [Fact]
+    public async Task Returns_empty_processing_runs_when_none_exist()
+    {
+        var fakes = CreateFakes();
+        var handler = CreateHandler(fakes);
+
+        var response = await handler.Handle(new GetDocumentStatusQuery(fakes.Document.Id, TenantId));
+
+        Assert.Empty(response.ProcessingRuns);
+    }
+
     // ══ Helpers ═══════════════════════════════════════════════════
 
     private static GetDocumentStatusHandler CreateHandler(AllFakes fakes)
-        => new(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.TenantStub);
+        => new(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.RunRepo, fakes.TenantStub);
 
     private static AllFakes CreateFakes(
         bool noDocument = false,
@@ -175,7 +230,9 @@ public sealed class GetDocumentStatusHandlerTests
         int embeddingCount = 0,
         string? embeddingProvider = null,
         string? embeddingModel = null,
-        int? embeddingDimensions = null)
+        int? embeddingDimensions = null,
+        IReadOnlyList<DocumentProcessingRun>? runs = null,
+        Dictionary<Guid, IReadOnlyList<DocumentProcessingStep>>? steps = null)
     {
         var doc = Document.Create(Guid.NewGuid(), TenantId, "report.pdf", "report.pdf", UserId);
         Document? docToReturn = noDocument ? null : doc;
@@ -195,15 +252,17 @@ public sealed class GetDocumentStatusHandlerTests
         var docRepo = new FakeDocumentRepository(docToReturn);
         var chunkRepo = new FakeChunkRepo(chunkCount);
         var embeddingRepo = new FakeEmbeddingRepo(embeddingCount, embeddingProvider, embeddingModel, embeddingDimensions);
+        var runRepo = new FakeRunRepo(runs, steps);
         var tenantStub = new StubCurrentTenant(TenantId);
 
-        return new AllFakes(docRepo, chunkRepo, embeddingRepo, tenantStub, docToReturn!, version!);
+        return new AllFakes(docRepo, chunkRepo, embeddingRepo, runRepo, tenantStub, docToReturn!, version!);
     }
 
     private sealed record AllFakes(
         FakeDocumentRepository DocRepo,
         FakeChunkRepo ChunkRepo,
         FakeEmbeddingRepo EmbeddingRepo,
+        FakeRunRepo RunRepo,
         StubCurrentTenant TenantStub,
         Document Document,
         DocumentVersion Version);
@@ -245,6 +304,12 @@ public sealed class GetDocumentStatusHandlerTests
         public Task<int> CountByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) => Task.FromResult(_count);
 
         public Task DeleteByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task<ChunkListResult> ListByVersionAsync(Guid tid, Guid did, Guid vid, int pn, int ps, string? s, string? st, int? pf, CancellationToken ct = default)
+            => Task.FromResult(new ChunkListResult(Array.Empty<DocumentChunk>(), pn, ps, 0));
+
+        public Task<DocumentChunk?> GetByIdForVersionAsync(Guid tid, Guid did, Guid vid, Guid cid, CancellationToken ct = default)
+            => Task.FromResult<DocumentChunk?>(null);
     }
 
     private sealed class FakeEmbeddingRepo : IDocumentEmbeddingRepository
@@ -274,5 +339,36 @@ public sealed class GetDocumentStatusHandlerTests
         }
 
         public Task DeleteByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task<ChunkListResult> ListByVersionAsync(Guid tid, Guid did, Guid vid, int pn, int ps, string? s, string? st, int? pf, CancellationToken ct = default)
+            => Task.FromResult(new ChunkListResult(Array.Empty<DocumentChunk>(), pn, ps, 0));
+
+        public Task<DocumentChunk?> GetByIdForVersionAsync(Guid tid, Guid did, Guid vid, Guid cid, CancellationToken ct = default)
+            => Task.FromResult<DocumentChunk?>(null);
+    }
+
+    private sealed class FakeRunRepo : IProcessingRunRepository
+    {
+        private readonly IReadOnlyList<DocumentProcessingRun> _runs;
+        private readonly Dictionary<Guid, IReadOnlyList<DocumentProcessingStep>> _steps;
+
+        public FakeRunRepo(
+            IReadOnlyList<DocumentProcessingRun>? runs = null,
+            Dictionary<Guid, IReadOnlyList<DocumentProcessingStep>>? steps = null)
+        {
+            _runs = runs ?? Array.Empty<DocumentProcessingRun>();
+            _steps = steps ?? new Dictionary<Guid, IReadOnlyList<DocumentProcessingStep>>();
+        }
+
+        public Task AddAsync(DocumentProcessingRun run, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<DocumentProcessingRun?> GetByIdAsync(Guid tid, Guid rid, CancellationToken ct = default) => Task.FromResult<DocumentProcessingRun?>(null);
+        public Task<DocumentProcessingRun?> GetByIdForUpdateAsync(Guid tid, Guid rid, CancellationToken ct = default) => Task.FromResult<DocumentProcessingRun?>(null);
+        public Task AddStepAsync(DocumentProcessingStep s, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<DocumentProcessingStep?> GetStepAsync(Guid tid, Guid rid, DocumentProcessingStepName sn, CancellationToken ct = default) => Task.FromResult<DocumentProcessingStep?>(null);
+        public Task<DocumentProcessingStep?> GetStepForUpdateAsync(Guid tid, Guid rid, DocumentProcessingStepName sn, CancellationToken ct = default) => Task.FromResult<DocumentProcessingStep?>(null);
+        public Task<IReadOnlyList<DocumentProcessingRun>> GetRunsByDocumentAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
+            => Task.FromResult(_runs);
+        public Task<IReadOnlyList<DocumentProcessingStep>> GetStepsByRunAsync(Guid tid, Guid rid, CancellationToken ct = default)
+            => Task.FromResult(_steps.TryGetValue(rid, out var s) ? s : Array.Empty<DocumentProcessingStep>());
     }
 }

@@ -159,6 +159,12 @@ public sealed class DeleteDocumentHandlerTests
             DeleteCalled = true;
             return Task.CompletedTask;
         }
+
+        public Task<ChunkListResult> ListByVersionAsync(Guid tid, Guid did, Guid vid, int pn, int ps, string? s, string? st, int? pf, CancellationToken ct = default)
+            => Task.FromResult(new ChunkListResult(Array.Empty<DocumentChunk>(), pn, ps, 0));
+
+        public Task<DocumentChunk?> GetByIdForVersionAsync(Guid tid, Guid did, Guid vid, Guid cid, CancellationToken ct = default)
+            => Task.FromResult<DocumentChunk?>(null);
     }
 
     private sealed class FakeEmbeddingRepo : IDocumentEmbeddingRepository

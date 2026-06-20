@@ -33,4 +33,15 @@ public interface IProcessingRunRepository
         Guid processingRunId,
         DocumentProcessingStepName stepName,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<DocumentProcessingRun>> GetRunsByDocumentAsync(
+        Guid tenantId,
+        Guid documentId,
+        Guid versionId,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<DocumentProcessingStep>> GetStepsByRunAsync(
+        Guid tenantId,
+        Guid processingRunId,
+        CancellationToken cancellationToken = default);
 }

@@ -306,3 +306,59 @@ The first event published depends on flags:
 - Updated Docling options or extraction schema
 - Different chunking provider or parameters
 - New embedding model or provider
+
+## Processing history and troubleshooting
+
+### Checking processing status
+
+```
+GET /api/documents/{documentId}/status
+```
+
+The response includes `processingRuns` with full history:
+
+```json
+{
+  "processingRuns": [
+    {
+      "runId": "...",
+      "reason": "InitialUpload",
+      "status": "Completed",
+      "startedAt": "2026-06-20T12:00:00Z",
+      "completedAt": "2026-06-20T12:00:05Z",
+      "correlationId": "abc123...",
+      "steps": [
+        {
+          "name": "Preprocess",
+          "status": "Completed",
+          "attemptCount": 1,
+          "startedAt": "2026-06-20T12:00:00Z",
+          "completedAt": "2026-06-20T12:00:02Z",
+          "errorMessage": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Common failures
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| Preprocess step failed | Docling Serve unavailable | Check Docling Serve is running and accessible |
+| Preprocess step failed | Invalid/unreadable file | Upload a supported file format |
+| Chunk step failed | Markdown artifact missing or corrupt | Reprocess with `forcePreprocess: true` |
+| Embed step failed | Embedding provider unavailable | Check LM Studio/Ollama/OpenAI endpoint |
+| Document stuck in Processing | CAP/RabbitMQ connectivity | Check RabbitMQ is running and accessible |
+| Document stuck in Processing | Worker not running | Start the Worker process |
+| All steps "Pending" | Event not published | Check CAP outbox and message broker |
+
+### Troubleshooting steps
+
+1. Check document status: `GET /api/documents/{id}/status`
+2. Inspect the latest `processingRuns` entry for failed steps
+3. Look at `errorMessage` on failed steps for details
+4. Check Worker logs for correlation ID
+5. Verify all infrastructure services are running (Aspire dashboard)
+6. Reprocess: `POST /api/documents/{id}/reprocess`

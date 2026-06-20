@@ -248,6 +248,12 @@ public sealed class GenerateEmbeddingsHandlerTests
 
         public Task DeleteByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
             => Task.CompletedTask;
+
+        public Task<ChunkListResult> ListByVersionAsync(Guid tid, Guid did, Guid vid, int pn, int ps, string? s, string? st, int? pf, CancellationToken ct = default)
+            => Task.FromResult(new ChunkListResult(Array.Empty<DocumentChunk>(), pn, ps, 0));
+
+        public Task<DocumentChunk?> GetByIdForVersionAsync(Guid tid, Guid did, Guid vid, Guid cid, CancellationToken ct = default)
+            => Task.FromResult<DocumentChunk?>(null);
     }
 
     private sealed class FakeDocRepo : IDocumentRepository
@@ -302,6 +308,12 @@ public sealed class GenerateEmbeddingsHandlerTests
 
         public Task DeleteByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
             => Task.CompletedTask;
+
+        public Task<ChunkListResult> ListByVersionAsync(Guid tid, Guid did, Guid vid, int pn, int ps, string? s, string? st, int? pf, CancellationToken ct = default)
+            => Task.FromResult(new ChunkListResult(Array.Empty<DocumentChunk>(), pn, ps, 0));
+
+        public Task<DocumentChunk?> GetByIdForVersionAsync(Guid tid, Guid did, Guid vid, Guid cid, CancellationToken ct = default)
+            => Task.FromResult<DocumentChunk?>(null);
     }
 
     private sealed class FakeRunRepo : IProcessingRunRepository
@@ -315,6 +327,10 @@ public sealed class GenerateEmbeddingsHandlerTests
         public Task AddStepAsync(DocumentProcessingStep s, CancellationToken ct = default) => Task.CompletedTask;
         public Task<DocumentProcessingStep?> GetStepAsync(Guid tid, Guid rid, DocumentProcessingStepName sn, CancellationToken ct = default) => Task.FromResult<DocumentProcessingStep?>(null);
         public Task<DocumentProcessingStep?> GetStepForUpdateAsync(Guid tid, Guid rid, DocumentProcessingStepName sn, CancellationToken ct = default) => Task.FromResult<DocumentProcessingStep?>(null);
+        public Task<IReadOnlyList<DocumentProcessingRun>> GetRunsByDocumentAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<DocumentProcessingRun>>(Array.Empty<DocumentProcessingRun>());
+        public Task<IReadOnlyList<DocumentProcessingStep>> GetStepsByRunAsync(Guid tid, Guid rid, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<DocumentProcessingStep>>(Array.Empty<DocumentProcessingStep>());
     }
 
     private sealed class FakeEmbeddingService : IEmbeddingService

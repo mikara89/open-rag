@@ -156,3 +156,14 @@ Cascading delete: removes embeddings, chunks, and document/versions. Returns 204
 POST /api/rag/ask
 { "question": "...", "tenantId": "...", "topK": 5, "model": "mock-chat" }
 ```
+
+### Inspect artifacts and chunks
+
+```
+GET /api/documents/{id}/versions/{vid}/artifacts/markdown   → text/markdown
+GET /api/documents/{id}/versions/{vid}/artifacts/json       → application/json
+GET /api/documents/{id}/versions/{vid}/chunks?pageNumber=&pageSize=&search=
+GET /api/documents/{id}/versions/{vid}/chunks/{chunkId}     → chunk + embedding metadata
+```
+
+These endpoints help debug retrieval quality by inspecting extracted Markdown/JSON and generated chunks. Chunk list supports search by content, section title, and page number.

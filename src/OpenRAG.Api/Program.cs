@@ -1,8 +1,12 @@
 using Mediator;
 using OpenRAG.Application;
 using OpenRAG.Application.Documents.DeleteDocument;
+using OpenRAG.Application.Documents.GetDocumentChunk;
 using OpenRAG.Application.Documents.GetDocumentDetail;
 using OpenRAG.Application.Documents.GetDocumentStatus;
+using OpenRAG.Application.Documents.GetJsonArtifact;
+using OpenRAG.Application.Documents.GetMarkdownArtifact;
+using OpenRAG.Application.Documents.ListDocumentChunks;
 using OpenRAG.Application.Documents.ListDocuments;
 using OpenRAG.Application.Documents.ReprocessDocument;
 using OpenRAG.Application.Documents.UploadDocument;
@@ -135,6 +139,67 @@ app.MapDelete("/api/documents/{documentId:guid}", async (
     return Results.NoContent();
 })
 .WithName("DeleteDocument");
+
+// ── Artifact preview endpoints ────────────────────────────────────
+
+app.MapGet("/api/documents/{documentId:guid}/versions/{versionId:guid}/artifacts/markdown", async (
+    Guid documentId,
+    Guid versionId,
+    ISender sender,
+    CancellationToken cancellationToken) =>
+{
+    var query = new GetMarkdownArtifactQuery(documentId, versionId);
+    var response = await sender.Send(query, cancellationToken);
+    return Results.Text(response.Content, response.ContentType);
+})
+.WithName("GetMarkdownArtifact");
+
+app.MapGet("/api/documents/{documentId:guid}/versions/{versionId:guid}/artifacts/json", async (
+    Guid documentId,
+    Guid versionId,
+    ISender sender,
+    CancellationToken cancellationToken) =>
+{
+    var query = new GetJsonArtifactQuery(documentId, versionId);
+    var response = await sender.Send(query, cancellationToken);
+    return Results.Text(response.Content, response.ContentType);
+})
+.WithName("GetJsonArtifact");
+
+// ── Chunk endpoints ───────────────────────────────────────────────
+
+app.MapGet("/api/documents/{documentId:guid}/versions/{versionId:guid}/chunks", async (
+    Guid documentId,
+    Guid versionId,
+    int? pageNumber,
+    int? pageSize,
+    string? search,
+    string? sectionTitle,
+    int? pageNumberFilter,
+    ISender sender,
+    CancellationToken cancellationToken) =>
+{
+    var query = new ListDocumentChunksQuery(
+        documentId, versionId,
+        pageNumber ?? 1, pageSize ?? 20,
+        search, sectionTitle, pageNumberFilter);
+    var response = await sender.Send(query, cancellationToken);
+    return Results.Ok(response);
+})
+.WithName("ListDocumentChunks");
+
+app.MapGet("/api/documents/{documentId:guid}/versions/{versionId:guid}/chunks/{chunkId:guid}", async (
+    Guid documentId,
+    Guid versionId,
+    Guid chunkId,
+    ISender sender,
+    CancellationToken cancellationToken) =>
+{
+    var query = new GetDocumentChunkQuery(documentId, versionId, chunkId);
+    var response = await sender.Send(query, cancellationToken);
+    return Results.Ok(response);
+})
+.WithName("GetDocumentChunk");
 
 // ── RAG endpoints ─────────────────────────────────────────────────
 

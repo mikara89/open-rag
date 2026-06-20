@@ -77,4 +77,64 @@ public sealed class EfDocumentChunkRepository : IDocumentChunkRepository
 
         _dbContext.DocumentChunks.RemoveRange(chunks);
     }
+
+    public async Task<ChunkListResult> ListByVersionAsync(
+        Guid tenantId,
+        Guid documentId,
+        Guid versionId,
+        int pageNumber,
+        int pageSize,
+        string? search = null,
+        string? sectionTitle = null,
+        int? pageNumberFilter = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _dbContext.DocumentChunks
+            .AsNoTracking()
+            .Where(c => c.TenantId == tenantId
+                        && c.DocumentId == documentId
+                        && c.VersionId == versionId);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(c => c.Content.Contains(search));
+        }
+
+        if (!string.IsNullOrWhiteSpace(sectionTitle))
+        {
+            query = query.Where(c => c.SectionTitle != null && c.SectionTitle.Contains(sectionTitle));
+        }
+
+        if (pageNumberFilter.HasValue)
+        {
+            query = query.Where(c => c.PageNumber == pageNumberFilter.Value);
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        var items = await query
+            .OrderBy(c => c.ChunkIndex)
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return new ChunkListResult(items, pageNumber, pageSize, totalCount);
+    }
+
+    public async Task<DocumentChunk?> GetByIdForVersionAsync(
+        Guid tenantId,
+        Guid documentId,
+        Guid versionId,
+        Guid chunkId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.DocumentChunks
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                c => c.TenantId == tenantId
+                     && c.DocumentId == documentId
+                     && c.VersionId == versionId
+                     && c.Id == chunkId,
+                cancellationToken);
+    }
 }

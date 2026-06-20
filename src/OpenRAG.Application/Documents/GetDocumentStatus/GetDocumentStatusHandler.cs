@@ -11,17 +11,20 @@ public sealed class GetDocumentStatusHandler : IRequestHandler<GetDocumentStatus
     private readonly IDocumentRepository _documentRepository;
     private readonly IDocumentChunkRepository _chunkRepository;
     private readonly IDocumentEmbeddingRepository _embeddingRepository;
+    private readonly IProcessingRunRepository _processingRunRepository;
     private readonly ICurrentTenant _currentTenant;
 
     public GetDocumentStatusHandler(
         IDocumentRepository documentRepository,
         IDocumentChunkRepository chunkRepository,
         IDocumentEmbeddingRepository embeddingRepository,
+        IProcessingRunRepository processingRunRepository,
         ICurrentTenant currentTenant)
     {
         _documentRepository = documentRepository;
         _chunkRepository = chunkRepository;
         _embeddingRepository = embeddingRepository;
+        _processingRunRepository = processingRunRepository;
         _currentTenant = currentTenant;
     }
 
@@ -45,6 +48,7 @@ public sealed class GetDocumentStatusHandler : IRequestHandler<GetDocumentStatus
         }
 
         var versions = new List<DocumentVersionStatusDto>();
+        var allRuns = new List<ProcessingRunHistoryDto>();
 
         foreach (var version in document.Versions)
         {
@@ -57,6 +61,38 @@ public sealed class GetDocumentStatusHandler : IRequestHandler<GetDocumentStatus
             var embeddingMeta = await _embeddingRepository.GetMetadataByVersionAsync(
                 tenantId, document.Id, version.Id, cancellationToken);
 
+            // Load real processing runs and steps
+            var runs = await _processingRunRepository.GetRunsByDocumentAsync(
+                tenantId, document.Id, version.Id, cancellationToken);
+
+            var runDtos = new List<ProcessingRunHistoryDto>();
+            foreach (var run in runs)
+            {
+                var runSteps = await _processingRunRepository.GetStepsByRunAsync(
+                    tenantId, run.Id, cancellationToken);
+
+                var stepDtos = runSteps.Select(s => new ProcessingStepHistoryDto(
+                    Name: s.StepName.ToString(),
+                    Status: s.Status.ToString(),
+                    AttemptCount: s.AttemptCount,
+                    StartedAt: s.StartedAt,
+                    CompletedAt: s.CompletedAt,
+                    ErrorMessage: s.LastErrorMessage
+                )).ToList();
+
+                runDtos.Add(new ProcessingRunHistoryDto(
+                    RunId: run.Id,
+                    Reason: run.RunReason.ToString(),
+                    Status: run.Status.ToString(),
+                    StartedAt: run.StartedAt,
+                    CompletedAt: run.CompletedAt,
+                    CorrelationId: run.CorrelationId,
+                    Steps: stepDtos));
+            }
+
+            allRuns.AddRange(runDtos);
+
+            // Derive step status from real data when available, fall back to version-based
             var steps = new List<ProcessingStepStatusDto>
             {
                 new("Preprocess", DeriveStepStatus(version.Status, version.DoclingMarkdownObjectKey),
@@ -96,7 +132,8 @@ public sealed class GetDocumentStatusHandler : IRequestHandler<GetDocumentStatus
             OriginalFileName: document.OriginalFileName,
             CreatedAt: document.CreatedAt,
             UpdatedAt: document.UpdatedAt,
-            Versions: versions);
+            Versions: versions,
+            ProcessingRuns: allRuns);
     }
 
     private static string DeriveVersionStatus(
