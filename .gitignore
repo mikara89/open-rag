@@ -1,0 +1,56 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.dll
+*.pdb
+*.exe
+*.dylib
+*.so
+*.nupkg
+**/packages/*
+!**/packages/build/
+*.dotCover
+.vs/
+*.sln.docstates
+_ReSharper*/
+[Tt]est[Rr]esult*
+*.ncrunch*
+BenchmarkDotNet.Artifacts/
+artifacts/
+.packages/
+
+## Node (if any front-end tooling)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+## AppHost / Aspire
+.aspire/
+
+## Local storage / runtime data
+.openrag-storage/
+*.db
+*.db-shm
+*.db-wal
+
+## Secrets
+appsettings.*.local.json
+secrets.json
+**/secrets.*.json
+
+## IDE / Editor
+.idea/
+*.swp
+*.swo
+*~
+.vscode/
+
+## OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini

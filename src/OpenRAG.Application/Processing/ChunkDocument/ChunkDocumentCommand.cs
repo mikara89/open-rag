@@ -1,0 +1,17 @@
+using Mediator;
+
+namespace OpenRAG.Application.Processing.ChunkDocument;
+
+public sealed record ChunkDocumentCommand(
+    Guid DocumentId,
+    Guid VersionId,
+    Guid ProcessingRunId,
+    string CorrelationId
+) : IRequest<ChunkDocumentResponse>;
+
+public sealed record ChunkDocumentResponse(
+    Guid DocumentId,
+    Guid VersionId,
+    int ChunkCount,
+    string Status
+);
