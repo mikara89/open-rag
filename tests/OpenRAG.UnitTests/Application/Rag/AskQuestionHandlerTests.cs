@@ -4,6 +4,7 @@ using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Vector;
 using OpenRAG.Application.Common;
 using OpenRAG.Application.Processing.GenerateEmbeddings;
+using OpenRAG.Application.Rag;
 using OpenRAG.Application.Rag.AskQuestion;
 
 namespace OpenRAG.UnitTests.Application.Rag;
@@ -312,8 +313,10 @@ public sealed class AskQuestionHandlerTests
     {
         fakes ??= CreateFakes();
         var embeddingOptions = Options.Create(new GenerateEmbeddingsOptions { Model = "mock-embedding-8" });
+        var ragOptions = Options.Create(new RagOptions { TopK = 5 });
         return new AskQuestionHandler(
-            fakes.Tenant, fakes.EmbeddingService, fakes.VectorSearchService, fakes.ChatCompletionService, embeddingOptions);
+            fakes.Tenant, fakes.EmbeddingService, fakes.VectorSearchService, fakes.ChatCompletionService,
+            embeddingOptions, ragOptions);
     }
 
     private static AllFakes CreateFakes(bool hasResults = true)

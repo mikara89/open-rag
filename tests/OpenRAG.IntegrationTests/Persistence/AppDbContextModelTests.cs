@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using OpenRAG.Infrastructure.Persistence;
+using Pgvector.EntityFrameworkCore;
 
 namespace OpenRAG.IntegrationTests.Persistence;
 
@@ -9,7 +10,8 @@ public sealed class AppDbContextModelTests
     public void Model_can_be_built_without_database_connection()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql("Host=localhost;Port=5432;Database=openrag_test;Username=test;Password=test")
+            .UseNpgsql("Host=localhost;Port=5432;Database=openrag_test;Username=test;Password=test",
+                npgsqlOptions => npgsqlOptions.UseVector())
             .Options;
 
         using var context = new AppDbContext(options);

@@ -11,6 +11,7 @@ using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Storage;
 using OpenRAG.Application.Abstractions.Time;
 using OpenRAG.Application.Abstractions.Vector;
+using OpenRAG.Application.Rag;
 using OpenRAG.Infrastructure.AI;
 using OpenRAG.Infrastructure.Messaging;
 using OpenRAG.Infrastructure.Persistence;
@@ -20,7 +21,8 @@ using OpenRAG.Infrastructure.Processing;
 using OpenRAG.Infrastructure.Security;
 using OpenRAG.Infrastructure.Storage;
 using OpenRAG.Infrastructure.Time;
-using OpenRAG.Infrastructure.Vector;
+using OpenRAG.Infrastructure.VectorSearch;
+using Pgvector.EntityFrameworkCore;
 
 namespace OpenRAG.Infrastructure;
 
@@ -45,7 +47,8 @@ public static class DependencyInjection
         }
 
         services.AddDbContext<AppDbContext>(options =>
-            options.UseNpgsql(connectionString));
+            options.UseNpgsql(connectionString, npgsqlOptions =>
+                npgsqlOptions.UseVector()));
 
         // Persistence
         services.AddScoped<IDocumentRepository, EfDocumentRepository>();
@@ -195,7 +198,11 @@ public static class DependencyInjection
             services.AddSingleton<IChatCompletionService, MockChatCompletionService>();
         }
 
-        // Vector search (fake — TODO: Replace with pgvector implementation)
+        // RAG options
+        services.Configure<RagOptions>(
+            configuration.GetSection(RagOptions.SectionName));
+
+        // Vector search (pgvector-backed EF Core implementation)
         services.AddScoped<IVectorSearchService, EfVectorSearchService>();
 
         return services;

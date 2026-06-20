@@ -35,7 +35,7 @@ The platform accepts files in many formats, stores originals in S3-compatible ob
 - CAP dev transport:
   - In-memory only for single-process development.
   - RabbitMQ for realistic API + Worker development.
-- Vector search: pgvector first.
+- Vector search: pgvector first (implemented via `Pgvector.EntityFrameworkCore`).
 - Object storage: S3-compatible abstraction behind `IFileStorage`.
 - Local object storage: MinIO or another S3-compatible container, but avoid coupling the domain to MinIO.
 - Preprocessing: Docling Serve preferred for containerized dev; Docling CLI acceptable for simple local tests.

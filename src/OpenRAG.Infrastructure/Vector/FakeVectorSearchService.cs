@@ -1,6 +1,6 @@
 using OpenRAG.Application.Abstractions.Vector;
 
-namespace OpenRAG.Infrastructure.Vector;
+namespace OpenRAG.Infrastructure.VectorSearch;
 
 /// <summary>
 /// Placeholder vector search service. Returns an empty result list.

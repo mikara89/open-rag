@@ -202,6 +202,42 @@ dotnet format style OpenRAG.slnx --verify-no-changes --no-restore
 - Embedding provider unavailable → check LM Studio/Ollama, reprocess
 - Invalid file → upload a supported format
 
+### Pgvector extension missing from PostgreSQL
+
+**Symptom:** `dotnet ef database update` fails with `type "vector" does not exist`.
+
+**Fix:** The pgvector extension must be enabled. The migration idempotently runs
+`CREATE EXTENSION IF NOT EXISTS vector;`. If this fails, your PostgreSQL image
+may not include pgvector.
+
+**Solutions:**
+1. **Use pgvector image (recommended):** The Aspire AppHost uses
+   `pgvector/pgvector:pg17` which includes pgvector. Restart containers.
+2. **Manual enable:** Connect to PostgreSQL and run:
+   ```sql
+   CREATE EXTENSION IF NOT EXISTS vector;
+   ```
+3. **Reset local DB:** If the extension is installed but the vector type doesn't work,
+   drop and recreate:
+   ```bash
+   docker compose down -v  # or podman volume rm
+   dotnet run --project src/OpenRAG.AppHost  # Recreates with pgvector support
+   ```
+
+### How pgvector changes retrieval
+
+With pgvector-backed storage:
+
+- **Server-side search:** Cosine distance (`<=>`) is computed in PostgreSQL,
+  not in application memory. This enables production-scale vector search.
+- **Vector column type:** Embeddings are stored in a native `vector` column
+  (was `bytea` with float serialization). The migration
+  `MigrateEmbeddingVectorToPgvector` handles the type change.
+- **Search behavior unchanged:** The `IVectorSearchService` abstraction is
+  unchanged. Mock providers and tests still work without pgvector.
+- **Existing data:** The migration alters the column type in-place.
+  Back up your database before running the migration on production data.
+
 ## MVP Acceptance Checklist
 
 MVP is accepted when all of the following pass:

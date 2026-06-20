@@ -5,6 +5,7 @@ using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Vector;
 using OpenRAG.Application.Common;
 using OpenRAG.Application.Processing.GenerateEmbeddings;
+using OpenRAG.Application.Rag;
 
 namespace OpenRAG.Application.Rag.AskQuestion;
 
@@ -15,19 +16,22 @@ public sealed class AskQuestionHandler : IRequestHandler<AskQuestionQuery, AskQu
     private readonly IVectorSearchService _vectorSearchService;
     private readonly IChatCompletionService _chatCompletionService;
     private readonly GenerateEmbeddingsOptions _embeddingOptions;
+    private readonly RagOptions _ragOptions;
 
     public AskQuestionHandler(
         ICurrentTenant currentTenant,
         IEmbeddingService embeddingService,
         IVectorSearchService vectorSearchService,
         IChatCompletionService chatCompletionService,
-        IOptions<GenerateEmbeddingsOptions> embeddingOptions)
+        IOptions<GenerateEmbeddingsOptions> embeddingOptions,
+        IOptions<RagOptions> ragOptions)
     {
         _currentTenant = currentTenant;
         _embeddingService = embeddingService;
         _vectorSearchService = vectorSearchService;
         _chatCompletionService = chatCompletionService;
         _embeddingOptions = embeddingOptions.Value;
+        _ragOptions = ragOptions.Value;
     }
 
     public async ValueTask<AskQuestionResponse> Handle(
@@ -40,10 +44,13 @@ public sealed class AskQuestionHandler : IRequestHandler<AskQuestionQuery, AskQu
             throw new AppException("Question cannot be empty.");
         }
 
-        if (query.TopK <= 0)
+        // Use query TopK if explicitly provided and valid, otherwise fall back to RagOptions default
+        if (query.TopK.HasValue && query.TopK.Value <= 0)
         {
             throw new AppException("TopK must be greater than zero.");
         }
+
+        var effectiveTopK = query.TopK > 0 ? query.TopK.Value : _ragOptions.TopK;
 
         if (string.IsNullOrWhiteSpace(query.Model))
         {
@@ -71,7 +78,7 @@ public sealed class AskQuestionHandler : IRequestHandler<AskQuestionQuery, AskQu
         var searchRequest = new VectorSearchRequest(
             TenantId: tenantId,
             QueryVector: embeddingResult.Vector.ToList(),
-            Limit: query.TopK,
+            Limit: effectiveTopK,
             DocumentIds: query.FilterDocumentIds,
             EmbeddingProvider: embeddingResult.Provider,
             EmbeddingModel: embeddingResult.Model,

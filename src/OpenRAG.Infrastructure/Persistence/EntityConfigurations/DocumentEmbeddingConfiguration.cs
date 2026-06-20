@@ -24,15 +24,14 @@ public sealed class DocumentEmbeddingConfiguration : IEntityTypeConfiguration<Do
         builder.Property(e => e.ChunkId)
             .IsRequired();
 
-        // TODO: Replace bytea storage with pgvector Vector type when
-        // Pgvector.EntityFrameworkCore supports EF Core 10 / Npgsql 10.
-        // Map float[] to bytea using a value converter.
+        // Pgvector Vector type — float[] ⟷ Pgvector.Vector ⟷ PostgreSQL vector.
+        // Pgvector.EntityFrameworkCore registers the Vector ⟷ vector mapping via UseVector().
+        // We convert float[] (domain) to Pgvector.Vector (EF model) here.
         builder.Property(e => e.Vector)
             .IsRequired()
-            .HasColumnType("bytea")
             .HasConversion(
-                v => SerializeVector(v),
-                v => DeserializeVector(v));
+                v => new Pgvector.Vector(v),
+                v => v.ToArray());
 
         builder.Property(e => e.EmbeddingProvider)
             .IsRequired()
@@ -59,19 +58,5 @@ public sealed class DocumentEmbeddingConfiguration : IEntityTypeConfiguration<Do
         builder.HasIndex(e => new { e.TenantId, e.VersionId, e.EmbeddingModel });
         builder.HasIndex(e => new { e.TenantId, e.ChunkId, e.EmbeddingModel })
             .IsUnique();
-    }
-
-    private static byte[] SerializeVector(float[] vector)
-    {
-        var bytes = new byte[vector.Length * sizeof(float)];
-        Buffer.BlockCopy(vector, 0, bytes, 0, bytes.Length);
-        return bytes;
-    }
-
-    private static float[] DeserializeVector(byte[] bytes)
-    {
-        var floats = new float[bytes.Length / sizeof(float)];
-        Buffer.BlockCopy(bytes, 0, floats, 0, bytes.Length);
-        return floats;
     }
 }

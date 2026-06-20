@@ -6,7 +6,7 @@ public sealed record AskQuestionQuery(
     string Question,
     Guid TenantId,
     IReadOnlyCollection<Guid>? FilterDocumentIds,
-    int TopK,
+    int? TopK,
     string Model,
     string CorrelationId
 ) : IRequest<AskQuestionResponse>;

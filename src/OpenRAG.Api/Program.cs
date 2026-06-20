@@ -213,7 +213,7 @@ app.MapPost("/api/rag/ask", async (
         Question: request.Question,
         TenantId: request.TenantId,
         FilterDocumentIds: request.DocumentIds?.Count > 0 ? request.DocumentIds : null,
-        TopK: request.TopK > 0 ? request.TopK : 5,
+        TopK: request.TopK > 0 ? request.TopK : null,
         Model: request.Model ?? "mock-chat",
         CorrelationId: Guid.NewGuid().ToString("N"));
 

@@ -1,4 +1,4 @@
-using OpenRAG.Infrastructure.Vector;
+using OpenRAG.Infrastructure.VectorSearch;
 
 namespace OpenRAG.UnitTests.Infrastructure.Vector;
 
