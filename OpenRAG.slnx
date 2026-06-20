@@ -1,0 +1,21 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/src/">
+    <Project Path="src/OpenRAG.Api/OpenRAG.Api.csproj" />
+    <Project Path="src/OpenRAG.AppHost/OpenRAG.AppHost.csproj" />
+    <Project Path="src/OpenRAG.Application/OpenRAG.Application.csproj" />
+    <Project Path="src/OpenRAG.Domain/OpenRAG.Domain.csproj" />
+    <Project Path="src/OpenRAG.Infrastructure/OpenRAG.Infrastructure.csproj" />
+    <Project Path="src/OpenRAG.ServiceDefaults/OpenRAG.ServiceDefaults.csproj" />
+    <Project Path="src/OpenRAG.Worker/OpenRAG.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OpenRAG.ArchitectureTests/OpenRAG.ArchitectureTests.csproj" />
+    <Project Path="tests/OpenRAG.IntegrationTests/OpenRAG.IntegrationTests.csproj" />
+    <Project Path="tests/OpenRAG.UnitTests/OpenRAG.UnitTests.csproj" />
+  </Folder>
+</Solution>
