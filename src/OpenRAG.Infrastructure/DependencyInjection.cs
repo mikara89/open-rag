@@ -59,7 +59,10 @@ public static class DependencyInjection
         services.AddSingleton<IFileStorage, LocalFileStorage>();
 
         // CAP with PostgreSQL storage + RabbitMQ transport
+        // Aspire injects ConnectionStrings:rabbitmq via WithReference(rabbitmq).
+        // Fall back to environment variable, then default localhost.
         var rabbitMqConnection = configuration.GetConnectionString("rabbitmq")
+            ?? Environment.GetEnvironmentVariable("ConnectionStrings__rabbitmq")
             ?? "amqp://guest:guest@localhost:5672/";
 
         services.AddCap(options =>
