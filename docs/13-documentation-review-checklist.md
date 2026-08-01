@@ -41,6 +41,10 @@ Use this checklist during PR review. A PR does not need every documentation cate
 ## Security and secrets docs
 
 - [ ] Authentication, authorization, tenant isolation, input handling, or logging changes are documented.
+- [ ] JWT Authority, Audience, claim types, role values, HTTPS metadata, and clock-skew defaults match the runtime configuration.
+- [ ] Protected endpoints, intentionally anonymous endpoints, and administrator-only endpoints match endpoint metadata and OpenAPI output.
+- [ ] 401 (authentication failure) and 403 (authenticated principal fails policy) behavior is documented accurately.
+- [ ] Authentication claims are not described as trusted tenant identity until P0.3 is complete.
 - [ ] Secret names and injection methods are documented without including secret values.
 - [ ] Logs, fixtures, examples, and screenshots contain no raw API keys, tokens, or personal data.
 

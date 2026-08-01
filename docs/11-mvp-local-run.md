@@ -12,6 +12,24 @@
 
 This mode uses mock providers for preprocessing, embeddings, and chat, so it needs no Docling or external AI service. PostgreSQL/pgvector and RabbitMQ still run as local infrastructure containers.
 
+### 0. Configure JWT authentication
+
+The API fails startup when `Authentication:Jwt:Authority` or `Authentication:Jwt:Audience` is absent or invalid. Use the values assigned by your identity provider; do not commit them to application settings.
+
+```powershell
+dotnet user-secrets set "Authentication:Jwt:Authority" "https://idp.example.com" --project src/OpenRAG.Api
+dotnet user-secrets set "Authentication:Jwt:Audience" "openrag-api" --project src/OpenRAG.Api
+```
+
+Equivalent environment variables are `Authentication__Jwt__Authority` and `Authentication__Jwt__Audience`. HTTPS metadata is required by default. Obtain an access token from the configured identity provider and keep it only in the current process:
+
+```powershell
+$env:OPENRAG_ACCESS_TOKEN = "<access token obtained outside OpenRAG>"
+```
+
+OpenRAG validates tokens but does not issue them. See [JWT authentication](15-authentication.md) for the full contract.
+The full MVP smoke test calls the provider-diagnostics endpoint, so its token must include exactly one valid GUID user-ID claim and the configured `admin` role.
+
 ### 1. Configure mock providers
 
 `src/OpenRAG.Api/appsettings.Development.json` (default):
@@ -44,7 +62,7 @@ Wait for all resources to be healthy in the Aspire dashboard.
 ### 3. Run MVP smoke test
 
 ```bash
-./scripts/mvp-smoke-test.ps1 -Model "mock-chat"
+./scripts/mvp-smoke-test.ps1 -Token $env:OPENRAG_ACCESS_TOKEN -Model "mock-chat"
 ```
 
 ## Quick start: DoclingServe + DeepSeek
@@ -98,7 +116,7 @@ dotnet run --project src/OpenRAG.AppHost
 ### 4. Run MVP smoke test
 
 ```bash
-./scripts/mvp-smoke-test.ps1 -Model "deepseek-chat" -ExpectedPreprocessor "DoclingServe"
+./scripts/mvp-smoke-test.ps1 -Token $env:OPENRAG_ACCESS_TOKEN -Model "deepseek-chat" -ExpectedPreprocessor "DoclingServe"
 ```
 
 ## Quick start: DoclingServe + local LM Studio embeddings + DeepSeek chat
@@ -151,8 +169,8 @@ dotnet format style OpenRAG.slnx --verify-no-changes --no-restore
 ./scripts/docs-check.ps1
 
 # API smoke test (requires running services)
-./scripts/mvp-smoke-test.ps1
-./scripts/mvp-smoke-test.ps1 -Model "deepseek-chat" -ExpectedPreprocessor "DoclingServe"
+./scripts/mvp-smoke-test.ps1 -Token $env:OPENRAG_ACCESS_TOKEN
+./scripts/mvp-smoke-test.ps1 -Token $env:OPENRAG_ACCESS_TOKEN -Model "deepseek-chat" -ExpectedPreprocessor "DoclingServe"
 ```
 
 GitHub Actions runs restore, Release build, tests with TRX and Cobertura coverage output, both format checks, and documentation validation for pull requests and pushes to `main`. `setup-dotnet` keys its NuGet cache from central package/build files, tool manifests, and project files because Aspire injects OS-specific packages that make one cross-platform lock file impractical. Test results and coverage are uploaded as separate artifacts. CI does not start Aspire or run the live smoke test, so it does not depend on PostgreSQL, RabbitMQ, Docling, external AI providers, local state, or secrets.
@@ -194,6 +212,18 @@ GitHub Actions runs restore, Release build, tests with TRX and Cobertura coverag
 **Symptom:** App fails to start with `Preprocessing:Docling:Provider 'X' is not recognized.`
 
 **Fix:** Use a valid provider name: `Mock` or `DoclingServe`. Check `GET /api/system/providers` for current configuration.
+
+### Authentication configuration failure
+
+**Symptom:** The API fails startup with an `Authentication:Jwt` validation message.
+
+**Fix:** Set an absolute HTTPS Authority and a non-empty Audience through user secrets or environment variables. Do not disable issuer, audience, signature, or lifetime validation. `RequireHttpsMetadata=false` is limited to isolated local development with an HTTP metadata endpoint and must not be used in production.
+
+### API returns 401 or 403
+
+- `401` with `WWW-Authenticate: Bearer` means the token is missing, malformed, expired, unsigned, or failed issuer, audience, or signature validation.
+- `403` means the token was authenticated but lacks exactly one usable GUID user-ID claim or the required role.
+- Provider diagnostics requires the configured administrator role; ordinary authenticated users receive `403`.
 
 ### Document stuck in Processing
 
@@ -259,9 +289,10 @@ With pgvector-backed storage:
 MVP is accepted when all of the following pass:
 
 - [ ] **Build:** `dotnet build OpenRAG.slnx` — 0 errors
-- [ ] **Tests:** `dotnet test OpenRAG.slnx` — all tests pass (327 at the time of this review)
+- [ ] **Tests:** `dotnet test OpenRAG.slnx` — all tests pass (364 in the P0.2 validation run)
 - [ ] **Format:** `dotnet format whitespace|style --verify-no-changes` — clean
-- [ ] **Provider diagnostics:** `GET /api/system/providers` returns configured providers
+- [ ] **Authentication:** Missing and invalid tokens return 401; a valid token with a GUID user-ID claim is accepted
+- [ ] **Provider diagnostics:** `GET /api/system/providers` returns configured providers only for an administrator token
 - [ ] **Upload:** `POST /api/documents/upload` returns 201 with documentId
 - [ ] **Processing:** Document reaches `Ready` status within timeout
 - [ ] **Processing history:** Status response includes `processingRuns` with completed steps (Preprocess, Chunk, Intelligence, GenerateEmbeddings)
@@ -278,4 +309,4 @@ MVP is accepted when all of the following pass:
 - [ ] **Delete verify:** Detail and status return 404 after delete
 - [ ] **Configuration validation:** Unknown provider names fail with clear error
 - [ ] **Secrets:** API keys are never exposed in logs or diagnostics endpoint
-- [ ] **Smoke test:** `./scripts/mvp-smoke-test.ps1` passes
+- [ ] **Smoke test:** `./scripts/mvp-smoke-test.ps1 -Token $env:OPENRAG_ACCESS_TOKEN` passes

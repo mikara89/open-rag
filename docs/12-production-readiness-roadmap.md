@@ -20,7 +20,7 @@ This is a production-oriented development baseline, not a production deployment.
 - **Objective:** Establish a supported authentication mechanism and trusted principal model for API requests.
 - **Acceptance criteria:** Authentication is required on protected endpoints; invalid or missing credentials are rejected; identity configuration and key rotation are documented and tested.
 - **Dependencies:** P0.1 trusted CI and an approved identity-provider design.
-- **Status:** Planned
+- **Status:** Complete — JWT Bearer validation and policy enforcement protect every `/api` route; current-user mapping, administrator authorization, startup validation, OpenAPI metadata, and negative token cases are covered. The P0.2 validation run passed all 364 tests, dependency auditing, format checks, and documentation checks.
 
 ### P0.3 — Trusted tenant resolution
 
@@ -54,7 +54,7 @@ This is a production-oriented development baseline, not a production deployment.
 
 ### Identity, authorization, and tenancy
 
-- Add authentication and endpoint authorization.
+- Extend the authentication foundation with trusted tenant resolution and resource-level authorization.
 - Derive tenant identity from trusted credentials instead of request-supplied values.
 - Harden tenant isolation in every query, event, cache key, storage key, and operational tool.
 - Add cross-tenant negative tests and authorization audit coverage.
@@ -78,7 +78,7 @@ This is a production-oriented development baseline, not a production deployment.
 ## Suggested delivery order
 
 1. Resolve known dependency advisories and establish a coverage policy plus security scanning.
-2. Add authentication, authorization, and tenant-isolation hardening.
+2. Complete trusted tenant resolution, resource authorization, and tenant-isolation hardening on the authentication foundation.
 3. Add S3-compatible storage plus tested backup/restore procedures.
 4. Create disposable integration infrastructure and a live smoke-test CI job.
 5. Add deployment manifests and a gated deployment pipeline.

@@ -1,5 +1,6 @@
 param(
     [string]$ApiBaseUrl = "https://localhost:7063",
+    [string]$Token = $env:OPENRAG_ACCESS_TOKEN,
     [string]$FilePath = "README.md",
     [string]$Model = "deepseek-chat",
     [string]$Question = "What is this document about?",
@@ -18,6 +19,7 @@ reprocess, ask again, and delete.
 
 Parameters:
   -ApiBaseUrl          API base URL (default: https://localhost:7063)
+  -Token               JWT access token (defaults to OPENRAG_ACCESS_TOKEN)
   -FilePath            Document to upload (default: README.md)
   -Model               Chat model for RAG ask (default: deepseek-chat)
   -Question            Question for RAG ask (default: "What is this document about?")
@@ -27,14 +29,20 @@ Parameters:
   -Help                Show this help
 
 Examples:
-  ./scripts/mvp-smoke-test.ps1
-  ./scripts/mvp-smoke-test.ps1 -Model "deepseek-chat" -ExpectedPreprocessor "DoclingServe"
-  ./scripts/mvp-smoke-test.ps1 -FilePath "testdoc.md" -SkipDelete
+  ./scripts/mvp-smoke-test.ps1 -Token `$env:OPENRAG_ACCESS_TOKEN
+  ./scripts/mvp-smoke-test.ps1 -Token `$env:OPENRAG_ACCESS_TOKEN -Model "deepseek-chat" -ExpectedPreprocessor "DoclingServe"
+  ./scripts/mvp-smoke-test.ps1 -Token `$env:OPENRAG_ACCESS_TOKEN -FilePath "testdoc.md" -SkipDelete
 "@
     exit 0
 }
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($Token)) {
+    throw "A JWT access token is required. Pass -Token or set OPENRAG_ACCESS_TOKEN."
+}
+
+$authorizationHeaders = @{ Authorization = "Bearer $Token" }
 
 # ═══════════════════════════════════════════════════════════════════
 # Header
@@ -64,14 +72,14 @@ function Invoke-Upload {
     $fileContent = [System.Net.Http.ByteArrayContent]::new($FileBytes)
     $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/octet-stream")
     $form['file'].Add($fileContent, "file", $FileName)
-    return Invoke-RestMethod -Uri $Url -Method Post -Form $form -SkipCertificateCheck
+    return Invoke-RestMethod -Uri $Url -Method Post -Form $form -Headers $authorizationHeaders -SkipCertificateCheck
 }
 
 # Helper: safe JSON body
 function Invoke-JsonPost {
     param([string]$Url, $Body)
     $json = $Body | ConvertTo-Json -Compress
-    return Invoke-RestMethod -Uri $Url -Method Post -Body $json -ContentType "application/json" -SkipCertificateCheck
+    return Invoke-RestMethod -Uri $Url -Method Post -Body $json -ContentType "application/json" -Headers $authorizationHeaders -SkipCertificateCheck
 }
 
 # Helper: wait for document status
@@ -82,7 +90,7 @@ function Wait-ForStatus {
     do {
         Start-Sleep -Seconds $interval
         $waited += $interval
-        $status = Invoke-RestMethod -Uri $StatusUrl -Method Get -SkipCertificateCheck -ErrorAction SilentlyContinue
+        $status = Invoke-RestMethod -Uri $StatusUrl -Method Get -Headers $authorizationHeaders -SkipCertificateCheck -ErrorAction SilentlyContinue
         if (-not $status) {
             Write-Host "  [${waited}s] Status request failed, retrying..." -ForegroundColor DarkGray
             continue
@@ -104,7 +112,7 @@ function Wait-ForStatus {
 # ═══════════════════════════════════════════════════════════════════
 Write-Host "━━━ [1] Provider diagnostics ━━━" -ForegroundColor Yellow
 try {
-    $providers = Invoke-RestMethod -Uri "$ApiBaseUrl/api/system/providers" -Method Get -SkipCertificateCheck
+    $providers = Invoke-RestMethod -Uri "$ApiBaseUrl/api/system/providers" -Method Get -Headers $authorizationHeaders -SkipCertificateCheck
     Write-Host "  Preprocessing : $($providers.preprocessing.provider) (configured: $($providers.preprocessing.configured))"
     if ($providers.preprocessing.baseUrl) { Write-Host "    BaseUrl: $($providers.preprocessing.baseUrl)" }
     if ($providers.preprocessing.validationErrors) {
@@ -150,7 +158,7 @@ Write-Host ""
 # Step 4 — Status with processing history
 # ═══════════════════════════════════════════════════════════════════
 Write-Host "━━━ [4] Document status (with processing history) ━━━" -ForegroundColor Yellow
-$status = Invoke-RestMethod -Uri $statusUrl -Method Get -SkipCertificateCheck
+$status = Invoke-RestMethod -Uri $statusUrl -Method Get -Headers $authorizationHeaders -SkipCertificateCheck
 Write-Host "  Status         : $($status.status)"
 Write-Host "  FileName       : $($status.originalFileName)"
 if ($status.versions -and $status.versions.Count -gt 0) {
@@ -184,7 +192,7 @@ Write-Host ""
 # Step 5 — List documents
 # ═══════════════════════════════════════════════════════════════════
 Write-Host "━━━ [5] List documents ━━━" -ForegroundColor Yellow
-$list = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents?pageSize=10" -Method Get -SkipCertificateCheck
+$list = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents?pageSize=10" -Method Get -Headers $authorizationHeaders -SkipCertificateCheck
 $foundDoc = $list.items | Where-Object { $_.documentId -eq $documentId }
 if ($foundDoc) {
     Write-Host "  Found in list: $($foundDoc.fileName) status=$($foundDoc.status)" -ForegroundColor Green
@@ -199,7 +207,7 @@ Write-Host ""
 # ═══════════════════════════════════════════════════════════════════
 Write-Host "━━━ [6] Document detail ━━━" -ForegroundColor Yellow
 $detailUrl = "$ApiBaseUrl/api/documents/$documentId"
-$detail = Invoke-RestMethod -Uri $detailUrl -Method Get -SkipCertificateCheck
+$detail = Invoke-RestMethod -Uri $detailUrl -Method Get -Headers $authorizationHeaders -SkipCertificateCheck
 Write-Host "  FileName       : $($detail.fileName)"
 Write-Host "  Status         : $($detail.status)"
 if ($detail.latestVersion) {
@@ -226,7 +234,7 @@ $versionId = if ($detail.latestVersion.versionId) { $detail.latestVersion.versio
 Write-Host "━━━ [7] Markdown artifact ━━━" -ForegroundColor Yellow
 $mdUrl = "$ApiBaseUrl/api/documents/$documentId/versions/$versionId/artifacts/markdown"
 try {
-    $markdown = Invoke-RestMethod -Uri $mdUrl -Method Get -SkipCertificateCheck
+    $markdown = Invoke-RestMethod -Uri $mdUrl -Method Get -Headers $authorizationHeaders -SkipCertificateCheck
     $mdPreview = $markdown.Substring(0, [Math]::Min(200, $markdown.Length))
     Write-Host "  Preview: $($mdPreview -replace '\n', ' ' | ForEach-Object { $_.Substring(0, [Math]::Min(150, $_.Length)) })..." -ForegroundColor Green
 } catch {
@@ -240,7 +248,7 @@ Write-Host ""
 Write-Host "━━━ [8] JSON artifact ━━━" -ForegroundColor Yellow
 $jsonUrl = "$ApiBaseUrl/api/documents/$documentId/versions/$versionId/artifacts/json"
 try {
-    $jsonArtifact = Invoke-RestMethod -Uri $jsonUrl -Method Get -SkipCertificateCheck
+    $jsonArtifact = Invoke-RestMethod -Uri $jsonUrl -Method Get -Headers $authorizationHeaders -SkipCertificateCheck
     $jsonPreview = $jsonArtifact.Substring(0, [Math]::Min(150, $jsonArtifact.Length))
     Write-Host "  Preview: $jsonPreview..." -ForegroundColor Green
 } catch {
@@ -253,7 +261,7 @@ Write-Host ""
 # ═══════════════════════════════════════════════════════════════════
 Write-Host "━━━ [9] List chunks ━━━" -ForegroundColor Yellow
 $chunksUrl = "$ApiBaseUrl/api/documents/$documentId/versions/$versionId/chunks?pageSize=5"
-$chunks = Invoke-RestMethod -Uri $chunksUrl -Method Get -SkipCertificateCheck
+$chunks = Invoke-RestMethod -Uri $chunksUrl -Method Get -Headers $authorizationHeaders -SkipCertificateCheck
 Write-Host "  Total chunks: $($chunks.totalCount)" -ForegroundColor Green
 $firstChunkId = $null
 if ($chunks.items -and $chunks.items.Count -gt 0) {
@@ -271,7 +279,7 @@ Write-Host ""
 Write-Host "━━━ [10] First chunk detail ━━━" -ForegroundColor Yellow
 if ($firstChunkId) {
     $chunkDetailUrl = "$ApiBaseUrl/api/documents/$documentId/versions/$versionId/chunks/$firstChunkId"
-    $chunkDetail = Invoke-RestMethod -Uri $chunkDetailUrl -Method Get -SkipCertificateCheck
+    $chunkDetail = Invoke-RestMethod -Uri $chunkDetailUrl -Method Get -Headers $authorizationHeaders -SkipCertificateCheck
     Write-Host "  ChunkId    : $($chunkDetail.chunkId)"
     Write-Host "  Index      : $($chunkDetail.chunkIndex)"
     Write-Host "  Page       : $($chunkDetail.pageNumber)"
@@ -356,7 +364,7 @@ if (-not $SkipDelete) {
     Write-Host "━━━ [15] Delete document ━━━" -ForegroundColor Yellow
     $deleteUrl = "$ApiBaseUrl/api/documents/$documentId"
     try {
-        Invoke-RestMethod -Uri $deleteUrl -Method Delete -SkipCertificateCheck -StatusCodeVariable deleteSc
+        Invoke-RestMethod -Uri $deleteUrl -Method Delete -Headers $authorizationHeaders -SkipCertificateCheck -StatusCodeVariable deleteSc
         if ($deleteSc -eq 204) {
             Write-Host "  Deleted (204 No Content)" -ForegroundColor Green
         } else {
@@ -376,7 +384,7 @@ if (-not $SkipDelete) {
 
     # Detail
     try {
-        $null = Invoke-RestMethod -Uri $detailUrl -Method Get -SkipCertificateCheck -StatusCodeVariable detailSc2
+        $null = Invoke-RestMethod -Uri $detailUrl -Method Get -Headers $authorizationHeaders -SkipCertificateCheck -StatusCodeVariable detailSc2
         if ($detailSc2 -ne 404) {
             Write-Host "  WARNING: Detail returned $detailSc2 (expected 404)" -ForegroundColor DarkYellow
             $verifiedGone = $false
@@ -389,7 +397,7 @@ if (-not $SkipDelete) {
 
     # Status
     try {
-        $null = Invoke-RestMethod -Uri $statusUrl -Method Get -SkipCertificateCheck -StatusCodeVariable statusSc2
+        $null = Invoke-RestMethod -Uri $statusUrl -Method Get -Headers $authorizationHeaders -SkipCertificateCheck -StatusCodeVariable statusSc2
         if ($statusSc2 -ne 404) {
             Write-Host "  WARNING: Status returned $statusSc2 (expected 404)" -ForegroundColor DarkYellow
             $verifiedGone = $false

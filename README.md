@@ -24,6 +24,7 @@ The platform accepts files, stores originals through `IFileStorage`, preprocesse
 | [Production-readiness roadmap](docs/12-production-readiness-roadmap.md) | Remaining gaps before production use |
 | [Documentation review checklist](docs/13-documentation-review-checklist.md) | PR guidance for deciding which docs must change |
 | [GitHub governance](docs/14-github-governance.md) | Recommended branch protection and emergency procedures |
+| [JWT authentication](docs/15-authentication.md) | JWT Bearer configuration, claim contract, policies, and local usage |
 | [Security policy](SECURITY.md) | Supported status, vulnerability reporting, and known security limitations |
 | [ADR 0001](docs/adr/0001-use-clean-onion-with-vertical-slices.md) | Architecture style |
 | [ADR 0002](docs/adr/0002-use-aspire-for-local-development.md) | Aspire local development |
@@ -62,6 +63,9 @@ The platform accepts files, stores originals through `IFileStorage`, preprocesse
 | RAG ask | `POST /api/rag/ask` |
 | Provider diagnostics | `GET /api/system/providers` |
 | Document intelligence | `GET .../versions/{versionId}/intelligence` |
+| Authentication | JWT Bearer on every `/api` endpoint; GUID `sub` claim required by default |
+| Administrator policy | `GET /api/system/providers` requires the `admin` role |
+| Development OpenAPI | Anonymous `GET /openapi/v1.json` only in Development |
 | Config validation | Startup-time `IValidateOptions<T>` |
 | Secret handling | Env vars, user secrets, never logged |
 
@@ -70,6 +74,12 @@ The platform accepts files, stores originals through `IFileStorage`, preprocesse
 Runtime processing and RAG retrieval require PostgreSQL with the pgvector extension. Aspire uses `pgvector/pgvector:pg17`; CI intentionally does not start PostgreSQL because the automated tests use isolated models and fakes.
 
 The `MigrateEmbeddingVectorToPgvector` EF migration changes the embedding column from `bytea` to native `vector`. Back up any existing database first. Treat legacy `bytea` embedding values as regenerable data: they may need to be dropped during migration and recreated through `POST /api/documents/{id}/reprocess` with `forceEmbeddings: true`.
+
+## Security boundary
+
+Every `/api` endpoint requires a validated JWT Bearer token. The default user-ID claim is `sub` and must contain exactly one non-empty GUID; `GET /api/system/providers` additionally requires the `admin` role. Configure `Authentication:Jwt:Authority` and `Authentication:Jwt:Audience` through environment variables or user secrets before starting the API. See [JWT authentication](docs/15-authentication.md).
+
+> **Authentication is implemented, but tenant identity is not yet trusted.** `DevelopmentCurrentTenant` and request-supplied RAG tenant selection remain temporary P0.3 blockers. The system is not production-safe for multitenant use.
 
 ## Quick validation
 
@@ -87,7 +97,7 @@ The `MigrateEmbeddingVectorToPgvector` EF migration changes the embedding column
 ./scripts/docs-check.ps1
 
 # API smoke test (requires running services)
-./scripts/mvp-smoke-test.ps1
+./scripts/mvp-smoke-test.ps1 -Token $env:OPENRAG_ACCESS_TOKEN
 ```
 
 GitHub Actions runs dependency-free validation for pull requests to `main` and pushes to `main`, fails when NuGet vulnerability data is unavailable or when High or Critical vulnerabilities are reported (including transitive packages), and retains TRX test results and Cobertura coverage as separate artifacts. The live MVP smoke test is deliberately manual until CI has disposable service infrastructure.

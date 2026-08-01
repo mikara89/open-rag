@@ -1,4 +1,5 @@
 using Mediator;
+using OpenRAG.Api.Security;
 using OpenRAG.Application;
 using OpenRAG.Application.Documents.DeleteDocument;
 using OpenRAG.Application.Documents.GetDocumentChunk;
@@ -22,22 +23,32 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddMediator(options => options.ServiceLifetime = ServiceLifetime.Scoped);
-builder.Services.AddOpenApi();
+builder.Services.AddOpenRagAuthentication(builder.Configuration);
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
+    options.AddOperationTransformer<BearerSecurityRequirementTransformer>();
+});
 
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi().AllowAnonymous();
 }
 
 app.UseHttpsRedirection();
+app.UseAuthentication();
+app.UseAuthorization();
+
+var api = app.MapGroup("/api")
+    .RequireAuthorization(OpenRagPolicies.AuthenticatedUser);
 
 // ── Document endpoints ───────────────────────────────────────────
 
 // List documents
-app.MapGet("/api/documents", async (
+api.MapGet("/documents", async (
     int? pageNumber,
     int? pageSize,
     string? status,
@@ -58,7 +69,7 @@ app.MapGet("/api/documents", async (
 .WithName("ListDocuments");
 
 // Upload document
-app.MapPost("/api/documents/upload", async (
+api.MapPost("/documents/upload", async (
     IFormFile file,
     ISender sender,
     CancellationToken cancellationToken) =>
@@ -81,7 +92,7 @@ app.MapPost("/api/documents/upload", async (
 .WithName("UploadDocument")
 .DisableAntiforgery();
 
-app.MapGet("/api/documents/{documentId:guid}/status", async (
+api.MapGet("/documents/{documentId:guid}/status", async (
     Guid documentId,
     ISender sender,
     CancellationToken cancellationToken) =>
@@ -94,7 +105,7 @@ app.MapGet("/api/documents/{documentId:guid}/status", async (
 
 // ── Reprocess endpoint ───────────────────────────────────────────
 
-app.MapPost("/api/documents/{documentId:guid}/reprocess", async (
+api.MapPost("/documents/{documentId:guid}/reprocess", async (
     Guid documentId,
     ReprocessDocumentRequest request,
     ISender sender,
@@ -119,7 +130,7 @@ app.MapPost("/api/documents/{documentId:guid}/reprocess", async (
 
 // ── Document detail endpoint ──────────────────────────────────────
 
-app.MapGet("/api/documents/{documentId:guid}", async (
+api.MapGet("/documents/{documentId:guid}", async (
     Guid documentId,
     ISender sender,
     CancellationToken cancellationToken) =>
@@ -132,7 +143,7 @@ app.MapGet("/api/documents/{documentId:guid}", async (
 
 // ── Delete document endpoint ──────────────────────────────────────
 
-app.MapDelete("/api/documents/{documentId:guid}", async (
+api.MapDelete("/documents/{documentId:guid}", async (
     Guid documentId,
     ISender sender,
     CancellationToken cancellationToken) =>
@@ -145,7 +156,7 @@ app.MapDelete("/api/documents/{documentId:guid}", async (
 
 // ── Artifact preview endpoints ────────────────────────────────────
 
-app.MapGet("/api/documents/{documentId:guid}/versions/{versionId:guid}/artifacts/markdown", async (
+api.MapGet("/documents/{documentId:guid}/versions/{versionId:guid}/artifacts/markdown", async (
     Guid documentId,
     Guid versionId,
     ISender sender,
@@ -157,7 +168,7 @@ app.MapGet("/api/documents/{documentId:guid}/versions/{versionId:guid}/artifacts
 })
 .WithName("GetMarkdownArtifact");
 
-app.MapGet("/api/documents/{documentId:guid}/versions/{versionId:guid}/artifacts/json", async (
+api.MapGet("/documents/{documentId:guid}/versions/{versionId:guid}/artifacts/json", async (
     Guid documentId,
     Guid versionId,
     ISender sender,
@@ -171,7 +182,7 @@ app.MapGet("/api/documents/{documentId:guid}/versions/{versionId:guid}/artifacts
 
 // ── Chunk endpoints ───────────────────────────────────────────────
 
-app.MapGet("/api/documents/{documentId:guid}/versions/{versionId:guid}/chunks", async (
+api.MapGet("/documents/{documentId:guid}/versions/{versionId:guid}/chunks", async (
     Guid documentId,
     Guid versionId,
     int? pageNumber,
@@ -191,7 +202,7 @@ app.MapGet("/api/documents/{documentId:guid}/versions/{versionId:guid}/chunks", 
 })
 .WithName("ListDocumentChunks");
 
-app.MapGet("/api/documents/{documentId:guid}/versions/{versionId:guid}/chunks/{chunkId:guid}", async (
+api.MapGet("/documents/{documentId:guid}/versions/{versionId:guid}/chunks/{chunkId:guid}", async (
     Guid documentId,
     Guid versionId,
     Guid chunkId,
@@ -206,7 +217,7 @@ app.MapGet("/api/documents/{documentId:guid}/versions/{versionId:guid}/chunks/{c
 
 // ── Intelligence endpoint ─────────────────────────────────────────
 
-app.MapGet("/api/documents/{documentId:guid}/versions/{versionId:guid}/intelligence", async (
+api.MapGet("/documents/{documentId:guid}/versions/{versionId:guid}/intelligence", async (
     Guid documentId,
     Guid versionId,
     ISender sender,
@@ -224,7 +235,7 @@ app.MapGet("/api/documents/{documentId:guid}/versions/{versionId:guid}/intellige
 
 // ── RAG endpoints ─────────────────────────────────────────────────
 
-app.MapPost("/api/rag/ask", async (
+api.MapPost("/rag/ask", async (
     AskQuestionRequest request,
     ISender sender,
     CancellationToken cancellationToken) =>
@@ -244,7 +255,7 @@ app.MapPost("/api/rag/ask", async (
 
 // ── System diagnostics endpoint ──────────────────────────────────
 
-app.MapGet("/api/system/providers", async (
+api.MapGet("/system/providers", async (
     ISender sender,
     CancellationToken cancellationToken) =>
 {
@@ -252,7 +263,8 @@ app.MapGet("/api/system/providers", async (
     var response = await sender.Send(query, cancellationToken);
     return Results.Ok(response);
 })
-.WithName("GetProvidersDiagnostics");
+.WithName("GetProvidersDiagnostics")
+.RequireAuthorization(OpenRagPolicies.Administrator);
 
 app.Run();
 
