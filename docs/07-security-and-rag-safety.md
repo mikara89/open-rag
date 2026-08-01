@@ -6,6 +6,12 @@ Every document, chunk, vector, extraction result, and processing event must be t
 
 Tenant isolation and authorization must be enforced before retrieval, before LLM calls, and before object storage access.
 
+## Current authentication boundary
+
+JWT Bearer authentication is implemented for every `/api` endpoint. The authenticated-user policy requires exactly one configured user-ID claim containing a non-empty GUID, and provider diagnostics additionally requires the `admin` role. See [JWT authentication](15-authentication.md).
+
+Trusted tenant resolution and document authorization are not implemented yet. `DevelopmentCurrentTenant` and request-supplied RAG tenant selection remain P0.3 blockers, so the current system is not production-safe for multitenant use.
+
 ## Tenant isolation
 
 Every important table should include:

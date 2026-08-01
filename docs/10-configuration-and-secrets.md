@@ -25,6 +25,8 @@ Aspire injects connection strings and service URLs as environment variables auto
 
 Build, unit, architecture, integration-model, format, and documentation checks do not require live PostgreSQL, RabbitMQ, Docling, or AI providers. GitHub CI does not start Aspire services or read developer-machine configuration.
 
+JWT Bearer authentication is configured separately under `Authentication:Jwt` and is required for API startup. Authority and Audience belong in environment variables or API user secrets, never committed settings. See [JWT authentication](15-authentication.md).
+
 ## Provider matrix
 
 | Category       | Provider           | Description                                | Requires external service |
@@ -247,6 +249,7 @@ All active providers are validated at startup via `IValidateOptions<T>`. The app
 - An unknown provider name is configured.
 - Required fields for a provider are missing (e.g., `BaseUrl` for DoclingServe).
 - API key source is missing for OpenAI-compatible providers.
+- JWT Authority or Audience is missing, the Authority is not an absolute HTTP(S) URI or violates the HTTPS-metadata policy, claim names are blank, or clock skew is outside 0–300 seconds.
 
 Example error message:
 

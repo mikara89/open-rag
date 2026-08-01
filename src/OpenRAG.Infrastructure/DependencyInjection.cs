@@ -90,9 +90,8 @@ public static class DependencyInjection
         // Messaging — CAP-backed event bus
         services.AddSingleton<IDocumentEventBus, CapDocumentEventBus>();
 
-        // Security (development placeholders)
+        // Tenant security remains a development placeholder until P0.3.
         services.AddScoped<ICurrentTenant, DevelopmentCurrentTenant>();
-        services.AddScoped<ICurrentUser, DevelopmentCurrentUser>();
 
         // Preprocessing — provider selection via configuration
         services.Configure<DoclingPreprocessorOptions>(

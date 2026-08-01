@@ -10,6 +10,7 @@ $requiredFiles = @(
     "docs/12-production-readiness-roadmap.md",
     "docs/13-documentation-review-checklist.md",
     "docs/14-github-governance.md",
+    "docs/15-authentication.md",
     "SECURITY.md"
 )
 
@@ -33,7 +34,8 @@ if (Test-Path -LiteralPath $readmePath -PathType Leaf) {
     $requiredReadmeLinks = @(
         "docs/05-processing-pipeline-and-cap.md",
         "docs/10-configuration-and-secrets.md",
-        "docs/11-mvp-local-run.md"
+        "docs/11-mvp-local-run.md",
+        "docs/15-authentication.md"
     )
 
     foreach ($target in $requiredReadmeLinks) {

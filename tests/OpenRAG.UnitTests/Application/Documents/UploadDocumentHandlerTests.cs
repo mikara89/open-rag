@@ -314,13 +314,20 @@ public sealed class UploadDocumentHandlerTests
         Guid? userId = null,
         bool isAuthenticated = true)
     {
+        var resolvedUserId = userId ?? UserId;
+        var currentUser = !isAuthenticated
+            ? TestCurrentUser.Unauthenticated(resolvedUserId)
+            : resolvedUserId == Guid.Empty
+                ? TestCurrentUser.InvalidOrEmpty()
+                : TestCurrentUser.Authenticated(resolvedUserId);
+
         return new UploadDocumentHandler(
             new FakeFileStorage(),
             new FakeDocumentRepository(),
             new FakeProcessingRunRepository(),
             new FakeDocumentEventBus(),
             new StubCurrentTenant(tenantId ?? TenantId),
-            new StubCurrentUser(userId ?? UserId, isAuthenticated),
+            currentUser,
             new StubClock(),
             new FakeUnitOfWork());
     }
@@ -332,7 +339,7 @@ public sealed class UploadDocumentHandlerTests
         var runRepo = new FakeProcessingRunRepository();
         var eventBus = new FakeDocumentEventBus();
         var tenant = new StubCurrentTenant(TenantId);
-        var user = new StubCurrentUser(UserId, true);
+        var user = TestCurrentUser.Authenticated(UserId);
         var clock = new StubClock();
         var uow = new FakeUnitOfWork();
 
@@ -355,15 +362,20 @@ public sealed class UploadDocumentHandlerTests
         public Guid TenantId { get; }
     }
 
-    private sealed class StubCurrentUser : ICurrentUser
+    private sealed class TestCurrentUser : ICurrentUser
     {
-        public StubCurrentUser(Guid userId, bool isAuthenticated)
+        private TestCurrentUser(Guid userId, bool isAuthenticated)
         {
             UserId = userId;
             IsAuthenticated = isAuthenticated;
         }
+
         public Guid UserId { get; }
         public bool IsAuthenticated { get; }
+
+        public static TestCurrentUser Authenticated(Guid userId) => new(userId, true);
+        public static TestCurrentUser Unauthenticated(Guid userId) => new(userId, false);
+        public static TestCurrentUser InvalidOrEmpty() => new(Guid.Empty, true);
     }
 
     private sealed class StubClock : IClock

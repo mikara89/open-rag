@@ -25,10 +25,14 @@ Never include real secrets, API keys, access tokens, connection strings, custome
 
 ## Current security limitations
 
-- Authentication is not implemented.
-- Tenant resolution is development-only and is not rooted in a trusted authenticated identity.
-- Authorization and production-grade tenant isolation are not complete.
+- JWT Bearer authentication protects every `/api` endpoint. Validated tokens must contain exactly one non-empty GUID user-ID claim (`sub` by default).
+- `GET /api/system/providers` additionally requires the administrator role (`admin` by default).
+- The Development-only OpenAPI document remains anonymous at `/openapi/v1.json`; it is not mapped outside Development.
+- Tenant resolution is still development-only and is not rooted in the authenticated principal. `DevelopmentCurrentTenant` remains registered, and `/api/rag/ask` still accepts request-supplied tenant selection.
+- Document-level authorization and production-grade tenant isolation are not complete. Authentication must not be interpreted as production-safe multitenancy.
 - The project has not completed production security hardening and must not be treated as production-ready.
+
+Authentication configuration, claim contracts, 401/403 behavior, and secret-handling expectations are documented in [docs/15-authentication.md](docs/15-authentication.md). Never include raw bearer tokens, signing keys, or identity-provider secrets in issues, pull requests, logs, or committed settings.
 
 ## Response expectations
 
