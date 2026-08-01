@@ -29,14 +29,14 @@ This is a production-oriented development baseline, not a production deployment.
 - **Dependencies:** P0.2 authentication foundation.
 - **Status:** Complete — HTTP tenant identity is resolved only from exactly one validated non-empty GUID JWT claim; request spoofing cannot override it; the development fallback is removed; CAP events and Worker commands preserve tenant context explicitly. The final P0.3 validation run passed all 403 tests, dependency auditing, format checks, and documentation checks.
 
-> Trusted tenant resolution is complete, but full resource authorization, repository/storage/vector isolation auditing, and adversarial cross-tenant integration testing remain P0.4 and P0.5 work.
+> Trusted tenant resolution and P0.4 code-level authorization/isolation are complete. P0.5 live adversarial infrastructure remains planned.
 
 ### P0.4 — Authorization and retrieval isolation
 
 - **Objective:** Enforce authorization and tenant isolation across document lifecycle, storage, processing, vector retrieval, and RAG responses.
 - **Acceptance criteria:** Every protected operation applies policy and tenant filters; storage and vector queries cannot cross tenants; denial behavior is consistent and audited.
 - **Dependencies:** P0.2 authentication foundation and P0.3 trusted tenant resolution.
-- **Status:** Planned
+- **Status:** Complete — Tenant-level authorization is enforced through explicit repository contracts, complete nested-resource validation, canonical object-key ownership, tenant-inclusive database relationships, parameterized pgvector retrieval, RAG filter preauthorization, and fail-closed result validation before LLM calls. Typed Problem Details and focused unit, architecture, model, and dependency-free integration tests cover denial behavior. P0.5 live infrastructure remains separate.
 
 ### P0.5 — Cross-tenant security integration tests
 
@@ -56,9 +56,8 @@ This is a production-oriented development baseline, not a production deployment.
 
 ### Identity, authorization, and tenancy
 
-- Build resource-level authorization on the completed trusted-tenant foundation.
-- Harden tenant isolation in every query, event, cache key, storage key, and operational tool.
-- Add cross-tenant negative tests and authorization audit coverage.
+- Prove the completed P0.4 resource controls through P0.5 disposable live PostgreSQL/pgvector, object-storage, API, and Worker infrastructure.
+- Design users, tenant membership, sharing, and per-user document ACLs before expanding authorization below the tenant boundary.
 
 ### Reliability and operations
 

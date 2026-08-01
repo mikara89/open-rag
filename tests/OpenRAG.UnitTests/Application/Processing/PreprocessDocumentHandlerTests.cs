@@ -66,6 +66,23 @@ public sealed class PreprocessDocumentHandlerTests
         var response = await handler.Handle(cmd);
 
         Assert.Equal("VersionNotFound", response.Status);
+        Assert.False(fakes.Preprocessor.Called);
+        Assert.Null(fakes.EventBus.LastEvent);
+        Assert.False(fakes.UnitOfWork.SaveChangesCalled);
+    }
+
+    [Fact]
+    public async Task Foreign_tenant_version_scope_performs_no_secondary_work()
+    {
+        var fakes = CreateFakes(versionMissing: true);
+
+        var response = await CreateHandler(fakes).Handle(
+            new PreprocessDocumentCommand(TenantId, DocId, VerId, RunId, "foreign-scope"));
+
+        Assert.Equal("VersionNotFound", response.Status);
+        Assert.False(fakes.Preprocessor.Called);
+        Assert.Null(fakes.EventBus.LastEvent);
+        Assert.False(fakes.UnitOfWork.SaveChangesCalled);
     }
 
     [Fact]
@@ -102,8 +119,12 @@ public sealed class PreprocessDocumentHandlerTests
 
         var response = await handler.Handle(cmd);
 
-        Assert.Equal("md-key", response.MarkdownObjectKey);
-        Assert.Equal("json-key", response.JsonObjectKey);
+        Assert.Equal(
+            $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/docling/document.md",
+            response.MarkdownObjectKey);
+        Assert.Equal(
+            $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/docling/document.json",
+            response.JsonObjectKey);
         Assert.Equal("Preprocessed", response.Status);
     }
 
@@ -211,7 +232,8 @@ public sealed class PreprocessDocumentHandlerTests
         return new PreprocessDocumentHandler(
             fakes.DocRepo, fakes.RunRepo, fakes.Preprocessor,
             fakes.EventBus, fakes.Clock, fakes.UnitOfWork,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<PreprocessDocumentHandler>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<PreprocessDocumentHandler>.Instance,
+            new OpenRAG.Application.Storage.DocumentObjectKeyPolicy());
     }
 
     private static AllFakes CreateFakes(
@@ -253,7 +275,8 @@ public sealed class PreprocessDocumentHandlerTests
 
     private static DocumentVersion CreateVersion()
         => DocumentVersion.Create(VerId, TenantId, DocId, 1,
-            "key", "application/pdf", 1024, "abc123");
+            $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/original/source.pdf",
+            "application/pdf", 1024, "abc123");
 
     private static DocumentProcessingRun CreateRun()
         => DocumentProcessingRun.Create(RunId, TenantId, DocId, VerId,
@@ -337,7 +360,11 @@ public sealed class PreprocessDocumentHandlerTests
             Called = true;
             LastRequest = req;
             if (ShouldThrow) throw new InvalidOperationException("Simulated preprocessor failure");
-            return Task.FromResult(new DocumentPreprocessingResult("md-key", "json-key", "md-hash", "json-hash"));
+            return Task.FromResult(new DocumentPreprocessingResult(
+                $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/docling/document.md",
+                $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/docling/document.json",
+                "md-hash",
+                "json-hash"));
         }
     }
 

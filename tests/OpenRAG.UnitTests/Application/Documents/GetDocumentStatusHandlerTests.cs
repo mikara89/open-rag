@@ -148,7 +148,7 @@ public sealed class GetDocumentStatusHandlerTests
 
         var query = new GetDocumentStatusQuery(Guid.NewGuid());
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(query).AsTask());
+        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() => handler.Handle(query).AsTask());
         Assert.Contains("not found", ex.Message);
     }
 
@@ -160,7 +160,7 @@ public sealed class GetDocumentStatusHandlerTests
 
         var query = new GetDocumentStatusQuery(Guid.Empty);
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(query).AsTask());
+        var ex = await Assert.ThrowsAsync<RequestValidationException>(() => handler.Handle(query).AsTask());
         Assert.Contains("DocumentId", ex.Message);
     }
 
@@ -169,10 +169,12 @@ public sealed class GetDocumentStatusHandlerTests
     [Fact]
     public async Task Includes_processing_runs_in_response()
     {
+        var documentId = Guid.NewGuid();
+        var versionId = Guid.NewGuid();
         var run = DocumentProcessingRun.Create(
-            Guid.NewGuid(), TenantId, Guid.NewGuid(), Guid.NewGuid(),
+            Guid.NewGuid(), TenantId, documentId, versionId,
             ProcessingRunReason.InitialUpload, "corr-123");
-        var fakes = CreateFakes(runs: new[] { run });
+        var fakes = CreateFakes(runs: new[] { run }, documentId: documentId, versionId: versionId);
         var handler = CreateHandler(fakes);
 
         var response = await handler.Handle(new GetDocumentStatusQuery(fakes.Document.Id));
@@ -186,17 +188,23 @@ public sealed class GetDocumentStatusHandlerTests
     [Fact]
     public async Task Includes_step_history_in_runs()
     {
+        var documentId = Guid.NewGuid();
+        var versionId = Guid.NewGuid();
         var run = DocumentProcessingRun.Create(
-            Guid.NewGuid(), TenantId, Guid.NewGuid(), Guid.NewGuid(),
+            Guid.NewGuid(), TenantId, documentId, versionId,
             ProcessingRunReason.InitialUpload, "corr-456");
         var step = DocumentProcessingStep.Create(
             Guid.NewGuid(), TenantId, run.DocumentId, run.VersionId, run.Id,
             DocumentProcessingStepName.Preprocess, 3, "hash-abc", "MockPreprocessor", "1.0");
         step.Start();
-        var fakes = CreateFakes(runs: new[] { run }, steps: new Dictionary<Guid, IReadOnlyList<DocumentProcessingStep>>
-        {
-            [run.Id] = new[] { step }
-        });
+        var fakes = CreateFakes(
+            runs: new[] { run },
+            steps: new Dictionary<Guid, IReadOnlyList<DocumentProcessingStep>>
+            {
+                [run.Id] = new[] { step }
+            },
+            documentId: documentId,
+            versionId: versionId);
         var handler = CreateHandler(fakes);
 
         var response = await handler.Handle(new GetDocumentStatusQuery(fakes.Document.Id));
@@ -232,16 +240,18 @@ public sealed class GetDocumentStatusHandlerTests
         string? embeddingModel = null,
         int? embeddingDimensions = null,
         IReadOnlyList<DocumentProcessingRun>? runs = null,
-        Dictionary<Guid, IReadOnlyList<DocumentProcessingStep>>? steps = null)
+        Dictionary<Guid, IReadOnlyList<DocumentProcessingStep>>? steps = null,
+        Guid? documentId = null,
+        Guid? versionId = null)
     {
-        var doc = Document.Create(Guid.NewGuid(), TenantId, "report.pdf", "report.pdf", UserId);
+        var doc = Document.Create(documentId ?? Guid.NewGuid(), TenantId, "report.pdf", "report.pdf", UserId);
         Document? docToReturn = noDocument ? null : doc;
 
         // Create version and attach to document if preprocessed
         DocumentVersion? version = null;
         if (!noDocument)
         {
-            version = doc.AddVersion(Guid.NewGuid(), 1, "tenants/t/doc/v/orig/report.pdf", "application/pdf", 1024, "abc");
+            version = doc.AddVersion(versionId ?? Guid.NewGuid(), 1, "tenants/t/doc/v/orig/report.pdf", "application/pdf", 1024, "abc");
             if (preprocessed)
             {
                 version.AttachDoclingArtifacts("tenants/t/doc/v/md.md", "tenants/t/doc/v/json.json");

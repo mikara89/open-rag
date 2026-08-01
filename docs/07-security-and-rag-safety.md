@@ -4,6 +4,10 @@
 
 Every document, chunk, vector, extraction result, and processing event must be tenant-scoped.
 
+The tenant is the implemented authorization boundary. Any authenticated user with one valid trusted tenant claim can operate on that tenant's resources. `CreatedByUserId` is audit metadata, not a per-user ownership rule; memberships, sharing, and document ACLs remain future work.
+
+P0.4 enforces explicit tenant predicates in repositories, complete nested-resource identity, canonical object-key ownership, composite database relationships, and parameterized pgvector predicates. Optional RAG document IDs are authorized in one tenant-scoped bulk lookup before embedding. Retrieved chunks are revalidated before prompt construction; a foreign, out-of-filter, empty, or duplicate identity causes a generic 500 and the chat provider is not called. Missing and foreign resources return the same generic 404. See [authorization and retrieval isolation](17-authorization-and-isolation.md).
+
 Tenant isolation and authorization must be enforced before retrieval, before LLM calls, and before object storage access.
 
 ## Current authentication boundary

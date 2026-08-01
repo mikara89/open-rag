@@ -68,8 +68,6 @@ namespace OpenRAG.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TenantId", "CurrentVersionId");
 
-                    b.HasIndex("TenantId", "Id");
-
                     b.HasIndex("TenantId", "Status");
 
                     b.ToTable("documents", (string)null);
@@ -187,6 +185,8 @@ namespace OpenRAG.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TenantId", "VersionId", "EmbeddingModel");
 
+                    b.HasIndex("TenantId", "DocumentId", "VersionId", "ChunkId");
+
                     b.ToTable("document_embeddings", (string)null);
                 });
 
@@ -242,6 +242,8 @@ namespace OpenRAG.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId", "VersionId")
                         .IsUnique();
 
+                    b.HasIndex("TenantId", "DocumentId", "VersionId");
+
                     b.ToTable("document_intelligence", (string)null);
                 });
 
@@ -296,13 +298,9 @@ namespace OpenRAG.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("DocumentId");
-
                     b.HasIndex("TenantId", "DocumentId");
 
                     b.HasIndex("TenantId", "Status");
-
-                    b.HasIndex("TenantId", "DocumentId", "Id");
 
                     b.HasIndex("TenantId", "DocumentId", "VersionNumber")
                         .IsUnique();
@@ -441,14 +439,67 @@ namespace OpenRAG.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId", "ProcessingRunId", "StepName")
                         .IsUnique();
 
+                    b.HasIndex("TenantId", "DocumentId", "VersionId", "ProcessingRunId");
+
                     b.ToTable("document_processing_steps", (string)null);
+                });
+
+            modelBuilder.Entity("OpenRAG.Domain.Documents.DocumentChunk", b =>
+                {
+                    b.HasOne("OpenRAG.Domain.Documents.DocumentVersion", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "DocumentId", "VersionId")
+                        .HasPrincipalKey("TenantId", "DocumentId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OpenRAG.Domain.Documents.DocumentEmbedding", b =>
+                {
+                    b.HasOne("OpenRAG.Domain.Documents.DocumentChunk", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "DocumentId", "VersionId", "ChunkId")
+                        .HasPrincipalKey("TenantId", "DocumentId", "VersionId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OpenRAG.Domain.Documents.DocumentIntelligence", b =>
+                {
+                    b.HasOne("OpenRAG.Domain.Documents.DocumentVersion", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "DocumentId", "VersionId")
+                        .HasPrincipalKey("TenantId", "DocumentId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("OpenRAG.Domain.Documents.DocumentVersion", b =>
                 {
                     b.HasOne("OpenRAG.Domain.Documents.Document", null)
                         .WithMany("_versions")
-                        .HasForeignKey("DocumentId")
+                        .HasForeignKey("TenantId", "DocumentId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OpenRAG.Domain.Processing.DocumentProcessingRun", b =>
+                {
+                    b.HasOne("OpenRAG.Domain.Documents.DocumentVersion", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "DocumentId", "VersionId")
+                        .HasPrincipalKey("TenantId", "DocumentId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OpenRAG.Domain.Processing.DocumentProcessingStep", b =>
+                {
+                    b.HasOne("OpenRAG.Domain.Processing.DocumentProcessingRun", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "DocumentId", "VersionId", "ProcessingRunId")
+                        .HasPrincipalKey("TenantId", "DocumentId", "VersionId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

@@ -47,7 +47,7 @@ public sealed class GetDocumentChunkHandlerTests
         var fakes = new Fakes(null, false);
         var handler = new GetDocumentChunkHandler(fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.DocRepo, fakes.Tenant);
 
-        var ex = await Assert.ThrowsAsync<AppException>(() =>
+        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
             handler.Handle(new GetDocumentChunkQuery(DocId, VerId, ChunkId)).AsTask());
         Assert.Contains("not found", ex.Message);
     }

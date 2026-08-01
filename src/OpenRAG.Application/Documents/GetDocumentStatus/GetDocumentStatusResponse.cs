@@ -27,16 +27,16 @@ public sealed record ProcessingStepHistoryDto(
     int AttemptCount,
     DateTimeOffset? StartedAt,
     DateTimeOffset? CompletedAt,
-    string? ErrorMessage
+    bool HasError
 );
 
 public sealed record DocumentVersionStatusDto(
     Guid VersionId,
     int VersionNumber,
     string Status,
-    string? OriginalObjectKey,
-    string? MarkdownObjectKey,
-    string? JsonObjectKey,
+    bool HasSourceFile,
+    bool HasMarkdownArtifact,
+    bool HasJsonArtifact,
     int ChunkCount,
     int EmbeddingCount,
     string? EmbeddingProvider,
@@ -51,5 +51,5 @@ public sealed record ProcessingStepStatusDto(
     int AttemptCount,
     DateTimeOffset? StartedAt,
     DateTimeOffset? CompletedAt,
-    string? ErrorMessage
+    bool HasError
 );

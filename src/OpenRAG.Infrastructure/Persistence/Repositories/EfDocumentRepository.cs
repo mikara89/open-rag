@@ -4,7 +4,7 @@ using OpenRAG.Domain.Documents;
 
 namespace OpenRAG.Infrastructure.Persistence.Repositories;
 
-public sealed class EfDocumentRepository : IDocumentRepository
+public sealed class EfDocumentRepository : IDocumentRepository, IDocumentAuthorizationRepository
 {
     private readonly AppDbContext _dbContext;
 
@@ -17,6 +17,16 @@ public sealed class EfDocumentRepository : IDocumentRepository
         Document document,
         CancellationToken cancellationToken = default)
     {
+        var tenantId = document.TenantId;
+        RepositoryIsolationGuard.Equal(document.TenantId, tenantId, nameof(document.TenantId));
+        RepositoryIsolationGuard.NonEmpty(document.Id, nameof(document.Id));
+        foreach (var version in document.Versions)
+        {
+            RepositoryIsolationGuard.Equal(version.TenantId, tenantId, nameof(version.TenantId));
+            RepositoryIsolationGuard.Equal(version.DocumentId, document.Id, nameof(version.DocumentId));
+            RepositoryIsolationGuard.NonEmpty(version.Id, nameof(version.Id));
+        }
+
         await _dbContext.Documents.AddAsync(document, cancellationToken);
     }
 
@@ -51,6 +61,7 @@ public sealed class EfDocumentRepository : IDocumentRepository
         CancellationToken cancellationToken = default)
     {
         return await _dbContext.Documents
+            .Include("_versions")
             .FirstOrDefaultAsync(
                 d => d.TenantId == tenantId && d.Id == documentId,
                 cancellationToken);
@@ -95,6 +106,28 @@ public sealed class EfDocumentRepository : IDocumentRepository
             .AnyAsync(
                 d => d.TenantId == tenantId && d.Id == documentId,
                 cancellationToken);
+    }
+
+    public async Task<IReadOnlySet<Guid>> GetExistingIdsAsync(
+        Guid tenantId,
+        IReadOnlyCollection<Guid> documentIds,
+        CancellationToken cancellationToken = default)
+    {
+        RepositoryIsolationGuard.NonEmpty(tenantId, nameof(tenantId));
+        if (documentIds.Count == 0)
+        {
+            return new HashSet<Guid>();
+        }
+
+        var ids = await _dbContext.Documents
+            .AsNoTracking()
+            .Where(document => document.TenantId == tenantId
+                               && documentIds.Contains(document.Id)
+                               && document.Status != DocumentStatus.Deleted)
+            .Select(document => document.Id)
+            .ToListAsync(cancellationToken);
+
+        return ids.ToHashSet();
     }
 
     public async Task<DocumentListResult> ListAsync(
@@ -142,6 +175,8 @@ public sealed class EfDocumentRepository : IDocumentRepository
         Document document,
         CancellationToken cancellationToken = default)
     {
+        RepositoryIsolationGuard.NonEmpty(document.TenantId, nameof(document.TenantId));
+        RepositoryIsolationGuard.NonEmpty(document.Id, nameof(document.Id));
         _dbContext.Documents.Remove(document);
         return Task.CompletedTask;
     }

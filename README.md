@@ -26,6 +26,7 @@ The platform accepts files, stores originals through `IFileStorage`, preprocesse
 | [GitHub governance](docs/14-github-governance.md) | Recommended branch protection and emergency procedures |
 | [JWT authentication](docs/15-authentication.md) | JWT Bearer configuration, claim contract, policies, and local usage |
 | [Trusted tenant resolution](docs/16-trusted-tenant-resolution.md) | JWT tenant claims, API trust boundary, and Worker propagation |
+| [Authorization and retrieval isolation](docs/17-authorization-and-isolation.md) | Tenant authorization, storage ownership, database constraints, vector retrieval, and RAG fail-closed rules |
 | [Security policy](SECURITY.md) | Supported status, vulnerability reporting, and known security limitations |
 | [ADR 0001](docs/adr/0001-use-clean-onion-with-vertical-slices.md) | Architecture style |
 | [ADR 0002](docs/adr/0002-use-aspire-for-local-development.md) | Aspire local development |
@@ -80,7 +81,9 @@ The `MigrateEmbeddingVectorToPgvector` EF migration changes the embedding column
 
 Every `/api` endpoint requires a validated JWT Bearer token. The default user-ID claim is `sub` and the default tenant claim is `tenant_id`; each must occur exactly once and contain a non-empty GUID. `GET /api/system/providers` additionally requires the `admin` role. Tenant identity comes only from the validated claim—there is no tenant header, request-body selection, or development fallback. Configure `Authentication:Jwt:Authority` and `Authentication:Jwt:Audience` through environment variables or user secrets before starting the API. See [JWT authentication](docs/15-authentication.md) and [trusted tenant resolution](docs/16-trusted-tenant-resolution.md).
 
-> **Trusted tenant resolution is complete, but multitenant authorization is not.** Full resource authorization, repository/storage/vector isolation auditing, and adversarial cross-tenant integration testing remain P0.4 and P0.5 work. The system is not yet production-safe for multitenant use.
+The tenant is the current resource-authorization boundary: any authenticated user with a valid trusted tenant claim may operate on that tenant's resources. `CreatedByUserId` is audit metadata, not a per-user ownership ACL. Document/version/chunk reads are explicitly tenant-scoped; persisted object keys are validated against tenant/document/version ownership; pgvector queries parameterize and apply the tenant, optional document filter, embedding compatibility, and full chunk relationship; RAG validates filters before embedding and retrieved identities before any LLM call. See [authorization and retrieval isolation](docs/17-authorization-and-isolation.md).
+
+> **P0.4 code-level isolation is complete, but production multitenancy is not.** P0.5 still requires disposable live PostgreSQL/pgvector, object-storage, API, and Worker adversarial tests. Per-user ownership, memberships, sharing, and ACLs are not implemented.
 
 ## Quick validation
 

@@ -82,10 +82,8 @@ public sealed class OpenAiCompatibleEmbeddingService : IEmbeddingService
 
         if (!response.IsSuccessStatusCode)
         {
-            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            var truncatedBody = errorBody.Length > 300 ? errorBody[..300] + "..." : errorBody;
             throw new AppException(
-                $"Embedding service returned HTTP {(int)response.StatusCode}: {truncatedBody}");
+                $"Embedding service returned HTTP {(int)response.StatusCode}.");
         }
 
         var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);

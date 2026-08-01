@@ -1,6 +1,8 @@
 using System.Reflection;
 using NetArchTest.Rules;
+using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Security;
+using OpenRAG.Application.Abstractions.Vector;
 using OpenRAG.Application.Processing.ChunkDocument;
 using OpenRAG.Application.Processing.GenerateEmbeddings;
 using OpenRAG.Application.Processing.GenerateIntelligence;
@@ -164,6 +166,72 @@ public class DependencyRuleTests
         });
     }
 
+    [Fact]
+    public void Tenant_owned_repository_read_contracts_start_with_explicit_tenant_id()
+    {
+        Type[] repositoryTypes =
+        [
+            typeof(IDocumentRepository),
+            typeof(IDocumentAuthorizationRepository),
+            typeof(IDocumentChunkRepository),
+            typeof(IDocumentEmbeddingRepository),
+            typeof(IDocumentIntelligenceRepository),
+            typeof(IProcessingRunRepository)
+        ];
+
+        var readPrefixes = new[] { "Get", "List", "Count", "Any", "Exists" };
+        var readMethods = repositoryTypes
+            .SelectMany(type => type.GetMethods())
+            .Where(method => readPrefixes.Any(prefix =>
+                method.Name.StartsWith(prefix, StringComparison.Ordinal)))
+            .ToArray();
+
+        Assert.NotEmpty(readMethods);
+        Assert.All(readMethods, method =>
+        {
+            var first = Assert.Single(method.GetParameters().Take(1));
+            Assert.Equal(typeof(Guid), first.ParameterType);
+            Assert.Equal("tenantId", first.Name);
+        });
+    }
+
+    [Fact]
+    public void Vector_results_carry_complete_tenant_owned_identity()
+    {
+        var properties = typeof(VectorSearchResultItem).GetProperties()
+            .ToDictionary(property => property.Name, property => property.PropertyType);
+
+        Assert.Equal(typeof(Guid), properties["TenantId"]);
+        Assert.Equal(typeof(Guid), properties["DocumentId"]);
+        Assert.Equal(typeof(Guid), properties["VersionId"]);
+        Assert.Equal(typeof(Guid), properties["ChunkId"]);
+    }
+
+    [Fact]
+    public void Production_source_contains_no_forbidden_lookup_bypasses_and_only_allowlisted_raw_sql()
+    {
+        var root = FindSolutionRoot();
+        var productionFiles = Directory.GetFiles(
+            Path.Combine(root, "src"), "*.cs", SearchOption.AllDirectories);
+
+        foreach (var file in productionFiles)
+        {
+            var source = File.ReadAllText(file);
+            Assert.DoesNotContain("IgnoreQueryFilters", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("FindAsync", source, StringComparison.Ordinal);
+
+            if (source.Contains("SqlQuery", StringComparison.Ordinal)
+                || source.Contains("FromSql", StringComparison.Ordinal)
+                || source.Contains("ExecuteSql", StringComparison.Ordinal))
+            {
+                Assert.EndsWith(
+                    Path.Combine("Infrastructure", "Vector", "EfVectorSearchService.cs"),
+                    file,
+                    StringComparison.OrdinalIgnoreCase);
+            }
+        }
+    }
+
     // ── Controller rule ───────────────────────────────────────────
 
     [Fact]
@@ -180,6 +248,16 @@ public class DependencyRuleTests
             .That().ResideInNamespace("OpenRAG.Api.Controllers")
             .ShouldNot().HaveDependencyOn(dbContextType.FullName!)
             .GetResult().ShouldSucceed();
+    }
+
+    private static string FindSolutionRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "OpenRAG.slnx")))
+            directory = directory.Parent;
+
+        return directory?.FullName
+               ?? throw new InvalidOperationException("Could not locate the solution root.");
     }
 }
 

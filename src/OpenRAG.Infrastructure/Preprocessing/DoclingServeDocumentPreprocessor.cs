@@ -18,6 +18,7 @@ public sealed class DoclingServeDocumentPreprocessor : IDocumentPreprocessor
 {
     private readonly HttpClient _httpClient;
     private readonly IFileStorage _fileStorage;
+    private readonly IDocumentObjectKeyPolicy _objectKeyPolicy;
     private readonly DoclingPreprocessorOptions _options;
     private readonly ILogger<DoclingServeDocumentPreprocessor> _logger;
 
@@ -26,11 +27,13 @@ public sealed class DoclingServeDocumentPreprocessor : IDocumentPreprocessor
     public DoclingServeDocumentPreprocessor(
         HttpClient httpClient,
         IFileStorage fileStorage,
+        IDocumentObjectKeyPolicy objectKeyPolicy,
         Microsoft.Extensions.Options.IOptions<DoclingPreprocessorOptions> options,
         ILogger<DoclingServeDocumentPreprocessor> logger)
     {
         _httpClient = httpClient;
         _fileStorage = fileStorage;
+        _objectKeyPolicy = objectKeyPolicy;
         _options = options.Value;
         _logger = logger;
 
@@ -43,7 +46,14 @@ public sealed class DoclingServeDocumentPreprocessor : IDocumentPreprocessor
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(request.OriginalObjectKey))
-            throw new AppException("OriginalObjectKey cannot be empty.");
+            throw new RequestValidationException("OriginalObjectKey cannot be empty.");
+
+        _objectKeyPolicy.EnsureOwned(
+            request.OriginalObjectKey,
+            request.TenantId,
+            request.DocumentId,
+            request.VersionId,
+            DocumentObjectKind.Source);
 
         // 1. Read original file from IFileStorage
         await using var originalStream = await _fileStorage.OpenReadAsync(
@@ -84,13 +94,11 @@ public sealed class DoclingServeDocumentPreprocessor : IDocumentPreprocessor
 
         if (!response.IsSuccessStatusCode)
         {
-            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            var truncatedBody = errorBody.Length > 500 ? errorBody[..500] + "..." : errorBody;
             _logger.LogError(
-                "Docling Serve returned HTTP {StatusCode} from {Url}: {Body}",
-                (int)response.StatusCode, url, truncatedBody);
+                "Docling Serve returned HTTP {StatusCode} from {Url}",
+                (int)response.StatusCode, url);
             throw new AppException(
-                $"Docling Serve returned HTTP {(int)response.StatusCode} from {url}: {truncatedBody}");
+                $"Docling Serve returned HTTP {(int)response.StatusCode}.");
         }
 
         // 3. Parse response (tolerant extraction)
@@ -100,20 +108,24 @@ public sealed class DoclingServeDocumentPreprocessor : IDocumentPreprocessor
 
         if (string.IsNullOrWhiteSpace(markdown))
         {
-            var preview = responseJson.Length > 2000 ? responseJson[..2000] + "..." : responseJson;
             _logger.LogError(
-                "Docling Serve returned HTTP 200 but no Markdown content was found. " +
-                "Endpoint={Url}, StatusCode=200, ResponsePreview={Preview}",
-                url, preview);
+                "Docling Serve returned HTTP 200 but no Markdown content was found. Endpoint={Url}",
+                url);
             throw new AppException(
-                $"Docling Serve returned a response but no Markdown content was found. " +
-                $"Endpoint: {url}. Response preview: {preview}");
+                "Docling Serve returned a response but no Markdown content was found.");
         }
 
         // 4. Store artifacts through IFileStorage
-        var basePath = $"tenants/{request.TenantId}/documents/{request.DocumentId}/versions/{request.VersionId}/docling";
-        var markdownKey = $"{basePath}/document.md";
-        var jsonKey = $"{basePath}/document.json";
+        var markdownKey = _objectKeyPolicy.BuildArtifactKey(
+            request.TenantId,
+            request.DocumentId,
+            request.VersionId,
+            DocumentObjectKind.Markdown);
+        var jsonKey = _objectKeyPolicy.BuildArtifactKey(
+            request.TenantId,
+            request.DocumentId,
+            request.VersionId,
+            DocumentObjectKind.Json);
 
         var markdownBytes = Encoding.UTF8.GetBytes(markdown);
         using var mdStream = new MemoryStream(markdownBytes);
@@ -127,8 +139,8 @@ public sealed class DoclingServeDocumentPreprocessor : IDocumentPreprocessor
         var jsonSha256 = ComputeSha256(jsonBytes);
 
         _logger.LogInformation(
-            "Docling preprocessing completed: DocumentId={DocumentId}, MarkdownKey={MarkdownKey}, JsonKey={JsonKey}",
-            request.DocumentId, markdownKey, jsonKey);
+            "Docling preprocessing completed: TenantId={TenantId}, DocumentId={DocumentId}, VersionId={VersionId}",
+            request.TenantId, request.DocumentId, request.VersionId);
 
         return new DocumentPreprocessingResult(
             MarkdownObjectKey: markdownKey,

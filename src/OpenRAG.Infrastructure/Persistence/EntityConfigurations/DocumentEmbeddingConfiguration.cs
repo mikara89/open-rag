@@ -51,6 +51,12 @@ public sealed class DocumentEmbeddingConfiguration : IEntityTypeConfiguration<Do
         builder.Property(e => e.CreatedAt)
             .IsRequired();
 
+        builder.HasOne<DocumentChunk>()
+            .WithMany()
+            .HasForeignKey(e => new { e.TenantId, e.DocumentId, e.VersionId, e.ChunkId })
+            .HasPrincipalKey(c => new { c.TenantId, c.DocumentId, c.VersionId, c.Id })
+            .OnDelete(DeleteBehavior.Cascade);
+
         // Indexes
         builder.HasIndex(e => new { e.TenantId, e.DocumentId });
         builder.HasIndex(e => new { e.TenantId, e.VersionId });

@@ -25,6 +25,7 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
     private readonly IClock _clock;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<ChunkDocumentHandler> _logger;
+    private readonly IDocumentObjectKeyPolicy _objectKeyPolicy;
 
     public ChunkDocumentHandler(
         IDocumentRepository documentRepository,
@@ -36,7 +37,8 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
         IDocumentEventBus eventBus,
         IClock clock,
         IUnitOfWork unitOfWork,
-        ILogger<ChunkDocumentHandler> logger)
+        ILogger<ChunkDocumentHandler> logger,
+        IDocumentObjectKeyPolicy objectKeyPolicy)
     {
         _documentRepository = documentRepository;
         _documentChunkRepository = documentChunkRepository;
@@ -48,6 +50,7 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
         _clock = clock;
         _unitOfWork = unitOfWork;
         _logger = logger;
+        _objectKeyPolicy = objectKeyPolicy;
     }
 
     public async ValueTask<ChunkDocumentResponse> Handle(
@@ -84,6 +87,10 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
             return NoOpResult(command, "VersionNotFound");
         }
 
+        IsolationGuard.Equal(version.TenantId, command.TenantId, nameof(version.TenantId));
+        IsolationGuard.Equal(version.DocumentId, command.DocumentId, nameof(version.DocumentId));
+        IsolationGuard.Equal(version.Id, command.VersionId, nameof(version.Id));
+
         var document = await _documentRepository.GetByIdForUpdateAsync(
             tenantId, command.DocumentId, cancellationToken);
 
@@ -94,6 +101,9 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
                 command.DocumentId, command.CorrelationId);
             return NoOpResult(command, "DocumentNotFound");
         }
+
+        IsolationGuard.Equal(document.TenantId, command.TenantId, nameof(document.TenantId));
+        IsolationGuard.Equal(document.Id, command.DocumentId, nameof(document.Id));
 
         if (document.Status == DocumentStatus.Deleted)
         {
@@ -123,9 +133,14 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
             return NoOpResult(command, "ProcessingRunNotFound");
         }
 
+        EnsureRunScope(run, command);
+
         // 5. Check if Chunk step already completed (idempotency within same run)
         var existingStep = await _processingRunRepository.GetStepForUpdateAsync(
             tenantId, command.ProcessingRunId, DocumentProcessingStepName.Chunk, cancellationToken);
+
+        if (existingStep is not null)
+            EnsureStepScope(existingStep, command);
 
         if (existingStep is not null && existingStep.Status == DocumentProcessingStepStatus.Completed)
         {
@@ -143,17 +158,25 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
                 Status: "AlreadyChunked");
         }
 
-        // 6. Clean up old chunks and embeddings before recreating (safe idempotency)
-        await _documentEmbeddingRepository.DeleteByVersionAsync(
-            tenantId, command.DocumentId, command.VersionId, cancellationToken);
-        await _documentChunkRepository.DeleteByVersionAsync(
-            tenantId, command.DocumentId, command.VersionId, cancellationToken);
+        _objectKeyPolicy.EnsureOwned(
+            version.DoclingMarkdownObjectKey,
+            tenantId,
+            command.DocumentId,
+            command.VersionId,
+            DocumentObjectKind.Markdown);
 
-        _logger.LogInformation(
-            "Deleted old chunks/embeddings for version. DocumentId={DocumentId}, VersionId={VersionId}",
-            command.DocumentId, command.VersionId);
+        if (!string.IsNullOrWhiteSpace(version.DoclingJsonObjectKey)
+            && version.DoclingJsonObjectKey != "pending")
+        {
+            _objectKeyPolicy.EnsureOwned(
+                version.DoclingJsonObjectKey,
+                tenantId,
+                command.DocumentId,
+                command.VersionId,
+                DocumentObjectKind.Json);
+        }
 
-        // 7. Create or reuse DocumentProcessingStep for Chunk
+        // 6. Create or reuse DocumentProcessingStep for Chunk
         var step = existingStep ?? DocumentProcessingStep.Create(
             Guid.NewGuid(),
             tenantId,
@@ -171,10 +194,10 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
             await _processingRunRepository.AddStepAsync(step, cancellationToken);
         }
 
-        // 8. Mark step as running (increments attempt count)
+        // 7. Mark step as running (increments attempt count)
         step.Start();
 
-        // 9. Read Markdown from IFileStorage
+        // 8. Read Markdown from IFileStorage
         string markdown;
         await using (var stream = await _fileStorage.OpenReadAsync(
             version.DoclingMarkdownObjectKey, cancellationToken))
@@ -183,7 +206,7 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
             markdown = await reader.ReadToEndAsync(cancellationToken);
         }
 
-        // 9b. Read Docling JSON artifact if available
+        // 8b. Read Docling JSON artifact if available
         string? doclingJson = null;
         if (!string.IsNullOrWhiteSpace(version.DoclingJsonObjectKey)
             && version.DoclingJsonObjectKey != "pending")
@@ -201,7 +224,7 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
             }
         }
 
-        // 10. Call IDocumentChunker
+        // 9. Generate the complete replacement set before deleting working retrieval data.
         IReadOnlyList<DocumentChunkingResultItem> chunkResults;
         try
         {
@@ -249,7 +272,7 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
                 Status: "Failed");
         }
 
-        // 11. Convert chunk results to DocumentChunk entities
+        // 10. Convert chunk results to DocumentChunk entities
         var documentChunks = chunkResults.Select(r => DocumentChunk.Create(
             id: Guid.NewGuid(),
             tenantId: tenantId,
@@ -263,19 +286,28 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
             sectionTitle: r.SectionTitle))
             .ToList();
 
-        // 12. Begin transaction
+        // 11. Begin transaction only after replacement generation succeeds.
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
-        // 13. Add chunks
+        // 12. Atomically replace old embeddings/chunks with the new chunk set.
+        await _documentEmbeddingRepository.DeleteByVersionAsync(
+            tenantId, command.DocumentId, command.VersionId, cancellationToken);
+        await _documentChunkRepository.DeleteByVersionAsync(
+            tenantId, command.DocumentId, command.VersionId, cancellationToken);
+
+        _logger.LogInformation(
+            "Replacing old chunks/embeddings for version. DocumentId={DocumentId}, VersionId={VersionId}",
+            command.DocumentId, command.VersionId);
+
         await _documentChunkRepository.AddRangeAsync(documentChunks, cancellationToken);
 
-        // 14. Mark step as completed
+        // 13. Mark step as completed
         step.MarkCompleted(chunkResults.LastOrDefault()?.ContentHash ?? "no-chunks");
 
-        // 15. SaveChanges
+        // 14. SaveChanges
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // 16. Publish DocumentChunkedEvent
+        // 15. Publish DocumentChunkedEvent
         var occurredAt = _clock.UtcNow;
         var chunkedEvent = new DocumentChunkedEvent(
             TenantId: tenantId,
@@ -288,7 +320,7 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
 
         await _eventBus.PublishAsync("document.chunked", chunkedEvent, cancellationToken);
 
-        // 17. Commit transaction
+        // 16. Commit transaction
         await transaction.CommitAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -309,5 +341,23 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
             VersionId: command.VersionId,
             ChunkCount: 0,
             Status: reason);
+    }
+
+    private static void EnsureRunScope(DocumentProcessingRun run, ChunkDocumentCommand command)
+    {
+        IsolationGuard.Equal(run.TenantId, command.TenantId, nameof(run.TenantId));
+        IsolationGuard.Equal(run.DocumentId, command.DocumentId, nameof(run.DocumentId));
+        IsolationGuard.Equal(run.VersionId, command.VersionId, nameof(run.VersionId));
+    }
+
+    private static void EnsureStepScope(DocumentProcessingStep step, ChunkDocumentCommand command)
+    {
+        IsolationGuard.Equal(step.TenantId, command.TenantId, nameof(step.TenantId));
+        IsolationGuard.Equal(step.DocumentId, command.DocumentId, nameof(step.DocumentId));
+        IsolationGuard.Equal(step.VersionId, command.VersionId, nameof(step.VersionId));
+        IsolationGuard.Equal(
+            step.ProcessingRunId,
+            command.ProcessingRunId,
+            nameof(step.ProcessingRunId));
     }
 }

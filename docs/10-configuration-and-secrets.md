@@ -1,5 +1,9 @@
 # 10 — Configuration and Secrets
 
+Authorization does not have a configurable tenant fallback or tenant selector. `Authentication:Jwt:TenantIdClaimType` configures only the trusted claim name. The tenant value always comes from the validated principal, and RAG/storage/database operations cannot be redirected through configuration, headers, query strings, routes, or bodies.
+
+Logs and public errors must not contain access tokens, signing keys, provider secrets, raw document content, embedding vectors, full prompts, SQL data, or full storage keys. Isolation failures use structured trace/correlation and resource identifiers without logging retrieved content or another tenant's ownership details. See [authorization and retrieval isolation](17-authorization-and-isolation.md).
+
 ## Overview
 
 OpenRAG uses a layered configuration system with explicit options classes, startup validation, and secure secret resolution. Every active provider has typed options that are validated at startup.

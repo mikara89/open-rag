@@ -29,6 +29,8 @@ public sealed class ListDocumentChunksHandler : IRequestHandler<ListDocumentChun
         CancellationToken cancellationToken = default)
     {
         var tenantId = _currentTenant.TenantId;
+        if (query.DocumentId == Guid.Empty || query.VersionId == Guid.Empty)
+            throw new RequestValidationException("Document and version identifiers must be non-empty.");
         var pageNumber = Math.Max(1, query.PageNumber);
         var pageSize = Math.Clamp(query.PageSize, 1, MaxPageSize);
 
@@ -37,13 +39,25 @@ public sealed class ListDocumentChunksHandler : IRequestHandler<ListDocumentChun
             tenantId, query.DocumentId, query.VersionId, cancellationToken);
 
         if (version is null)
-            throw new AppException($"Version '{query.VersionId}' not found for document '{query.DocumentId}'.");
+            throw new ResourceNotFoundException();
+
+        IsolationGuard.Equal(version.TenantId, tenantId, nameof(version.TenantId));
+        IsolationGuard.Equal(version.DocumentId, query.DocumentId, nameof(version.DocumentId));
+        IsolationGuard.Equal(version.Id, query.VersionId, nameof(version.Id));
 
         var result = await _chunkRepository.ListByVersionAsync(
             tenantId, query.DocumentId, query.VersionId,
             pageNumber, pageSize,
             query.Search, query.SectionTitle, query.PageNumberFilter,
             cancellationToken);
+
+        foreach (var chunk in result.Items)
+        {
+            IsolationGuard.Equal(chunk.TenantId, tenantId, nameof(chunk.TenantId));
+            IsolationGuard.Equal(chunk.DocumentId, query.DocumentId, nameof(chunk.DocumentId));
+            IsolationGuard.Equal(chunk.VersionId, query.VersionId, nameof(chunk.VersionId));
+            IsolationGuard.NonEmpty(chunk.Id, nameof(chunk.Id));
+        }
 
         var items = result.Items.Select(c => new DocumentChunkItemDto(
             ChunkId: c.Id,

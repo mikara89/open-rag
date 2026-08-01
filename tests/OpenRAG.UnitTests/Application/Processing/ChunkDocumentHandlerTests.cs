@@ -67,6 +67,27 @@ public sealed class ChunkDocumentHandlerTests
         var response = await handler.Handle(cmd);
 
         Assert.Equal("VersionNotFound", response.Status);
+        Assert.False(fakes.FileStorage.ReadCalled);
+        Assert.False(fakes.Chunker.Called);
+        Assert.False(fakes.ChunkRepo.ChunksAdded);
+        Assert.Null(fakes.EventBus.LastEvent);
+        Assert.False(fakes.UnitOfWork.SaveChangesCalled);
+    }
+
+    [Fact]
+    public async Task Foreign_tenant_version_scope_performs_no_secondary_work()
+    {
+        var fakes = CreateFakes(versionMissing: true);
+
+        var response = await CreateHandler(fakes).Handle(
+            new ChunkDocumentCommand(TenantId, DocId, VerId, RunId, "foreign-scope"));
+
+        Assert.Equal("VersionNotFound", response.Status);
+        Assert.False(fakes.FileStorage.ReadCalled);
+        Assert.False(fakes.Chunker.Called);
+        Assert.False(fakes.ChunkRepo.ChunksAdded);
+        Assert.Null(fakes.EventBus.LastEvent);
+        Assert.False(fakes.UnitOfWork.SaveChangesCalled);
     }
 
     [Fact]
@@ -172,6 +193,29 @@ public sealed class ChunkDocumentHandlerTests
     }
 
     [Fact]
+    public async Task Preserves_existing_chunks_and_embeddings_when_chunking_fails()
+    {
+        var fakes = CreateFakes(hasChunks: true);
+        fakes.Chunker.ShouldThrow = true;
+        var handler = CreateHandler(fakes);
+        var cmd = new ChunkDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
+
+        var response = await handler.Handle(cmd);
+
+        Assert.Equal("Failed", response.Status);
+        Assert.True(fakes.Chunker.Called);
+        Assert.False(fakes.ChunkRepo.Deleted);
+        Assert.False(fakes.EmbeddingRepo.Deleted);
+        Assert.False(fakes.ChunkRepo.ChunksAdded);
+        Assert.Equal(
+            DocumentProcessingStepStatus.Failed,
+            Assert.IsType<DocumentProcessingStep>(fakes.RunRepo.AddedStep).Status);
+        Assert.True(fakes.UnitOfWork.SaveChangesCalled);
+        Assert.True(fakes.UnitOfWork.TransactionCommitted);
+        Assert.Null(fakes.EventBus.LastEvent);
+    }
+
+    [Fact]
     public async Task Deletes_old_chunks_and_recreates_when_chunks_exist()
     {
         var fakes = CreateFakes(hasChunks: true);
@@ -180,9 +224,11 @@ public sealed class ChunkDocumentHandlerTests
 
         var response = await handler.Handle(cmd);
 
-        // Old chunks are deleted then new ones are created
         Assert.Equal("Chunked", response.Status);
         Assert.True(fakes.Chunker.Called);
+        Assert.True(fakes.EmbeddingRepo.Deleted);
+        Assert.True(fakes.ChunkRepo.Deleted);
+        Assert.True(fakes.ChunkRepo.ChunksAdded);
     }
 
     // ══ Helpers ═══════════════════════════════════════════════════
@@ -193,7 +239,8 @@ public sealed class ChunkDocumentHandlerTests
         return new ChunkDocumentHandler(
             fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo,
             fakes.RunRepo, fakes.FileStorage, fakes.Chunker, fakes.EventBus, fakes.Clock, fakes.UnitOfWork,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<ChunkDocumentHandler>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<ChunkDocumentHandler>.Instance,
+            new OpenRAG.Application.Storage.DocumentObjectKeyPolicy());
     }
 
     private static AllFakes CreateFakes(
@@ -221,10 +268,13 @@ public sealed class ChunkDocumentHandlerTests
     private static DocumentVersion CreateVersion(bool markdownMissing = false)
     {
         var version = DocumentVersion.Create(VerId, TenantId, DocId, 1,
-            "key", "application/pdf", 1024, "abc123");
+            $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/original/source.pdf",
+            "application/pdf", 1024, "abc123");
         if (!markdownMissing)
         {
-            version.AttachDoclingArtifacts("tenants/t/doc/v/md.md", "tenants/t/doc/v/json.json");
+            version.AttachDoclingArtifacts(
+                $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/docling/document.md",
+                $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/docling/document.json");
             version.MarkPreprocessed();
         }
         return version;
@@ -277,6 +327,7 @@ public sealed class ChunkDocumentHandlerTests
     {
         private readonly bool _hasChunks;
         public bool ChunksAdded { get; private set; }
+        public bool Deleted { get; private set; }
         public IReadOnlyCollection<DocumentChunk> AddedChunks { get; private set; } = Array.Empty<DocumentChunk>();
 
         public FakeChunkRepo(bool hasChunks = false) => _hasChunks = hasChunks;
@@ -306,7 +357,10 @@ public sealed class ChunkDocumentHandlerTests
             => Task.FromResult(_hasChunks ? 1 : 0);
 
         public Task DeleteByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
-            => Task.CompletedTask;
+        {
+            Deleted = true;
+            return Task.CompletedTask;
+        }
 
         public Task<ChunkListResult> ListByVersionAsync(Guid tid, Guid did, Guid vid, int pn, int ps, string? s, string? st, int? pf, CancellationToken ct = default)
             => Task.FromResult(new ChunkListResult(Array.Empty<DocumentChunk>(), pn, ps, 0));
@@ -319,12 +373,17 @@ public sealed class ChunkDocumentHandlerTests
     {
         private readonly DocumentProcessingRun? _run;
         private readonly DocumentProcessingStep? _step;
+        public DocumentProcessingStep? AddedStep { get; private set; }
         public FakeRunRepo(DocumentProcessingRun? run, DocumentProcessingStep? step) { _run = run; _step = step; }
 
         public Task AddAsync(DocumentProcessingRun r, CancellationToken ct = default) => Task.CompletedTask;
         public Task<DocumentProcessingRun?> GetByIdAsync(Guid tid, Guid rid, CancellationToken ct = default) => Task.FromResult<DocumentProcessingRun?>(null);
         public Task<DocumentProcessingRun?> GetByIdForUpdateAsync(Guid tid, Guid rid, CancellationToken ct = default) => Task.FromResult(_run);
-        public Task AddStepAsync(DocumentProcessingStep s, CancellationToken ct = default) => Task.CompletedTask;
+        public Task AddStepAsync(DocumentProcessingStep s, CancellationToken ct = default)
+        {
+            AddedStep = s;
+            return Task.CompletedTask;
+        }
         public Task<DocumentProcessingStep?> GetStepAsync(Guid tid, Guid rid, DocumentProcessingStepName sn, CancellationToken ct = default) => Task.FromResult<DocumentProcessingStep?>(null);
         public Task<DocumentProcessingStep?> GetStepForUpdateAsync(Guid tid, Guid rid, DocumentProcessingStepName sn, CancellationToken ct = default) => Task.FromResult(_step);
         public Task<IReadOnlyList<DocumentProcessingRun>> GetRunsByDocumentAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)

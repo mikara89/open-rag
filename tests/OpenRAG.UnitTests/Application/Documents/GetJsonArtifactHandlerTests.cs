@@ -12,13 +12,16 @@ public sealed class GetJsonArtifactHandlerTests
     private static readonly Guid TenantId = Guid.NewGuid();
     private static readonly Guid DocId = Guid.NewGuid();
     private static readonly Guid VerId = Guid.NewGuid();
+    private static string MarkdownKey => $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/docling/document.md";
+    private static string JsonKey => $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/docling/document.json";
+    private static string SourceKey => $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/original/source.md";
 
     [Fact]
     public async Task Returns_json_content()
     {
-        var version = CreateVersion("md-key", "json-key");
-        var fakes = new Fakes(version, "json-key", "{\"pages\": []}");
-        var handler = new GetJsonArtifactHandler(fakes.DocRepo, fakes.FileStorage, fakes.Tenant);
+        var version = CreateVersion(MarkdownKey, JsonKey);
+        var fakes = new Fakes(version, JsonKey, "{\"pages\": []}");
+        var handler = CreateHandler(fakes);
 
         var response = await handler.Handle(new GetJsonArtifactQuery(DocId, VerId));
 
@@ -29,18 +32,18 @@ public sealed class GetJsonArtifactHandlerTests
     [Fact]
     public async Task Returns_404_when_artifact_missing()
     {
-        var version = CreateVersion("md-key", null);
+        var version = CreateVersion(MarkdownKey, null);
         var fakes = new Fakes(version, null, null);
-        var handler = new GetJsonArtifactHandler(fakes.DocRepo, fakes.FileStorage, fakes.Tenant);
+        var handler = CreateHandler(fakes);
 
-        var ex = await Assert.ThrowsAsync<AppException>(() =>
+        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
             handler.Handle(new GetJsonArtifactQuery(DocId, VerId)).AsTask());
-        Assert.Contains("not available", ex.Message.ToLower());
+        Assert.Equal(ResourceNotFoundException.PublicMessage, ex.Message);
     }
 
     private static DocumentVersion CreateVersion(string? mdKey, string? jsonKey)
     {
-        var version = DocumentVersion.Create(VerId, TenantId, DocId, 1, "orig-key", "text/markdown", 100, "abc");
+        var version = DocumentVersion.Create(VerId, TenantId, DocId, 1, SourceKey, "text/markdown", 100, "abc");
         if (mdKey is not null && jsonKey is not null)
         {
             version.AttachDoclingArtifacts(mdKey, jsonKey);
@@ -48,6 +51,12 @@ public sealed class GetJsonArtifactHandlerTests
         }
         return version;
     }
+
+    private static GetJsonArtifactHandler CreateHandler(Fakes fakes) => new(
+        fakes.DocRepo,
+        fakes.FileStorage,
+        new OpenRAG.Application.Storage.DocumentObjectKeyPolicy(),
+        fakes.Tenant);
 
     private sealed class Fakes
     {

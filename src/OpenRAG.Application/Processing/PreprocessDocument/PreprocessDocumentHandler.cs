@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using OpenRAG.Application.Abstractions.Messaging;
 using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Processing;
+using OpenRAG.Application.Abstractions.Storage;
 using OpenRAG.Application.Abstractions.Time;
 using OpenRAG.Application.Common;
 using OpenRAG.Application.Messaging.Events;
@@ -21,6 +22,7 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
     private readonly IClock _clock;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<PreprocessDocumentHandler> _logger;
+    private readonly IDocumentObjectKeyPolicy _objectKeyPolicy;
 
     public PreprocessDocumentHandler(
         IDocumentRepository documentRepository,
@@ -29,7 +31,8 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
         IDocumentEventBus eventBus,
         IClock clock,
         IUnitOfWork unitOfWork,
-        ILogger<PreprocessDocumentHandler> logger)
+        ILogger<PreprocessDocumentHandler> logger,
+        IDocumentObjectKeyPolicy objectKeyPolicy)
     {
         _documentRepository = documentRepository;
         _processingRunRepository = processingRunRepository;
@@ -38,6 +41,7 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
         _clock = clock;
         _unitOfWork = unitOfWork;
         _logger = logger;
+        _objectKeyPolicy = objectKeyPolicy;
     }
 
     public async ValueTask<PreprocessDocumentResponse> Handle(
@@ -74,6 +78,10 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
             return NoOpResult(command, "VersionNotFound");
         }
 
+        IsolationGuard.Equal(version.TenantId, command.TenantId, nameof(version.TenantId));
+        IsolationGuard.Equal(version.DocumentId, command.DocumentId, nameof(version.DocumentId));
+        IsolationGuard.Equal(version.Id, command.VersionId, nameof(version.Id));
+
         var document = await _documentRepository.GetByIdForUpdateAsync(
             tenantId, command.DocumentId, cancellationToken);
 
@@ -85,19 +93,15 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
             return NoOpResult(command, "DocumentNotFound");
         }
 
+        IsolationGuard.Equal(document.TenantId, command.TenantId, nameof(document.TenantId));
+        IsolationGuard.Equal(document.Id, command.DocumentId, nameof(document.Id));
+
         if (document.Status == DocumentStatus.Deleted)
         {
             _logger.LogWarning(
                 "Preprocess no-op: Document is deleted. DocumentId={DocumentId}, CorrelationId={CorrelationId}",
                 command.DocumentId, command.CorrelationId);
             return NoOpResult(command, "DocumentDeleted");
-        }
-
-        // 2b. Mark document as Processing if not already (safe for retries)
-        if (document.Status == DocumentStatus.Uploaded
-            || document.Status == DocumentStatus.Failed)
-        {
-            document.MarkProcessing();
         }
 
         // 3. Load DocumentProcessingRun for update (tracking query)
@@ -112,9 +116,14 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
             return NoOpResult(command, "ProcessingRunNotFound");
         }
 
+        EnsureRunScope(run, command);
+
         // 4. Check if preprocessing step already completed (idempotency)
         var existingStep = await _processingRunRepository.GetStepForUpdateAsync(
             tenantId, command.ProcessingRunId, DocumentProcessingStepName.Preprocess, cancellationToken);
+
+        if (existingStep is not null)
+            EnsureStepScope(existingStep, command);
 
         if (existingStep is not null && existingStep.Status == DocumentProcessingStepStatus.Completed)
         {
@@ -127,6 +136,13 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
                 MarkdownObjectKey: version.DoclingMarkdownObjectKey ?? string.Empty,
                 JsonObjectKey: version.DoclingJsonObjectKey ?? string.Empty,
                 Status: "AlreadyPreprocessed");
+        }
+
+        // Authorization and idempotency checks have completed; mutation is now safe.
+        if (document.Status == DocumentStatus.Uploaded
+            || document.Status == DocumentStatus.Failed)
+        {
+            document.MarkProcessing();
         }
 
         // 5. Create or reuse DocumentProcessingStep for Preprocess
@@ -168,6 +184,13 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
             FileName: version.OriginalObjectKey.Split('/').Last(),
             MimeType: version.OriginalContentType,
             CorrelationId: command.CorrelationId);
+
+        _objectKeyPolicy.EnsureOwned(
+            version.OriginalObjectKey,
+            tenantId,
+            command.DocumentId,
+            command.VersionId,
+            DocumentObjectKind.Source);
 
         DocumentPreprocessingResult? preprocessResult;
         try
@@ -211,6 +234,19 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
                 JsonObjectKey: string.Empty,
                 Status: "Failed");
         }
+
+        _objectKeyPolicy.EnsureOwned(
+            preprocessResult.MarkdownObjectKey,
+            tenantId,
+            command.DocumentId,
+            command.VersionId,
+            DocumentObjectKind.Markdown);
+        _objectKeyPolicy.EnsureOwned(
+            preprocessResult.JsonObjectKey,
+            tenantId,
+            command.DocumentId,
+            command.VersionId,
+            DocumentObjectKind.Json);
 
         // 10. Begin database + CAP transaction
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
@@ -268,5 +304,27 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
             MarkdownObjectKey: string.Empty,
             JsonObjectKey: string.Empty,
             Status: reason);
+    }
+
+    private static void EnsureRunScope(
+        DocumentProcessingRun run,
+        PreprocessDocumentCommand command)
+    {
+        IsolationGuard.Equal(run.TenantId, command.TenantId, nameof(run.TenantId));
+        IsolationGuard.Equal(run.DocumentId, command.DocumentId, nameof(run.DocumentId));
+        IsolationGuard.Equal(run.VersionId, command.VersionId, nameof(run.VersionId));
+    }
+
+    private static void EnsureStepScope(
+        DocumentProcessingStep step,
+        PreprocessDocumentCommand command)
+    {
+        IsolationGuard.Equal(step.TenantId, command.TenantId, nameof(step.TenantId));
+        IsolationGuard.Equal(step.DocumentId, command.DocumentId, nameof(step.DocumentId));
+        IsolationGuard.Equal(step.VersionId, command.VersionId, nameof(step.VersionId));
+        IsolationGuard.Equal(
+            step.ProcessingRunId,
+            command.ProcessingRunId,
+            nameof(step.ProcessingRunId));
     }
 }

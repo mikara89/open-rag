@@ -47,6 +47,9 @@ Use this checklist during PR review. A PR does not need every documentation cate
 - [ ] Tenant claims are described as trusted identity only after validation (authenticated principal, configured claim name, exactly one non-empty GUID), and are not confused with P0.4 resource authorization.
 - [ ] API examples contain no tenant-selection header, query parameter, route value, or request-body field.
 - [ ] Worker documentation preserves tenant identity explicitly through CAP events and processing commands without ambient context.
+- [ ] `CreatedByUserId` is described as audit metadata, not a per-user ACL; tenant authorization is not mislabeled as owner authorization.
+- [ ] Missing and foreign resources document the same generic 404; 400/409/generic-500 Problem Details semantics match runtime behavior.
+- [ ] Storage-key, nested-resource, vector-filter, and pre-LLM fail-closed changes are reflected in the isolation matrix.
 - [ ] Secret names and injection methods are documented without including secret values.
 - [ ] Logs, fixtures, examples, and screenshots contain no raw API keys, tokens, or personal data.
 

@@ -23,7 +23,7 @@ public sealed class UploadDocumentHandlerTests
         var handler = CreateHandler();
         var command = new UploadDocumentCommand("", "application/pdf", 1024, Stream.Null, "test-1");
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(command).AsTask());
+        var ex = await Assert.ThrowsAsync<RequestValidationException>(() => handler.Handle(command).AsTask());
         Assert.Contains("File name", ex.Message);
     }
 
@@ -33,7 +33,7 @@ public sealed class UploadDocumentHandlerTests
         var handler = CreateHandler();
         var command = new UploadDocumentCommand("   ", "application/pdf", 1024, Stream.Null, "test-2");
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(command).AsTask());
+        var ex = await Assert.ThrowsAsync<RequestValidationException>(() => handler.Handle(command).AsTask());
         Assert.Contains("File name", ex.Message);
     }
 
@@ -43,7 +43,7 @@ public sealed class UploadDocumentHandlerTests
         var handler = CreateHandler();
         var command = new UploadDocumentCommand("report.pdf", "", 1024, Stream.Null, "test-3");
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(command).AsTask());
+        var ex = await Assert.ThrowsAsync<RequestValidationException>(() => handler.Handle(command).AsTask());
         Assert.Contains("Content type", ex.Message);
     }
 
@@ -53,7 +53,7 @@ public sealed class UploadDocumentHandlerTests
         var handler = CreateHandler();
         var command = new UploadDocumentCommand("report.pdf", "application/pdf", 0, Stream.Null, "test-4");
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(command).AsTask());
+        var ex = await Assert.ThrowsAsync<RequestValidationException>(() => handler.Handle(command).AsTask());
         Assert.Contains("size", ex.Message);
     }
 
@@ -63,7 +63,7 @@ public sealed class UploadDocumentHandlerTests
         var handler = CreateHandler();
         var command = new UploadDocumentCommand("report.pdf", "application/pdf", -1, Stream.Null, "test-5");
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(command).AsTask());
+        var ex = await Assert.ThrowsAsync<RequestValidationException>(() => handler.Handle(command).AsTask());
         Assert.Contains("size", ex.Message);
     }
 
@@ -73,7 +73,7 @@ public sealed class UploadDocumentHandlerTests
         var handler = CreateHandler();
         var command = new UploadDocumentCommand("report.pdf", "application/pdf", 1024, null!, "test-6");
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(command).AsTask());
+        var ex = await Assert.ThrowsAsync<RequestValidationException>(() => handler.Handle(command).AsTask());
         Assert.Contains("Content stream", ex.Message);
     }
 
@@ -84,7 +84,7 @@ public sealed class UploadDocumentHandlerTests
         var command = new UploadDocumentCommand(
             "large.pdf", "application/pdf", 200 * 1024 * 1024, Stream.Null, "test-7");
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(command).AsTask());
+        var ex = await Assert.ThrowsAsync<RequestValidationException>(() => handler.Handle(command).AsTask());
         Assert.Contains("maximum", ex.Message);
     }
 
@@ -95,7 +95,7 @@ public sealed class UploadDocumentHandlerTests
         var content = CreateContentStream("hello world");
         var command = new UploadDocumentCommand("report.pdf", "application/pdf", content.Length, content, "test-8");
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(command).AsTask());
+        var ex = await Assert.ThrowsAsync<IsolationViolationException>(() => handler.Handle(command).AsTask());
         Assert.Contains("authenticated", ex.Message);
     }
 
@@ -106,7 +106,7 @@ public sealed class UploadDocumentHandlerTests
         var content = CreateContentStream("hello world");
         var command = new UploadDocumentCommand("report.pdf", "application/pdf", content.Length, content, "test-9");
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(command).AsTask());
+        var ex = await Assert.ThrowsAsync<IsolationViolationException>(() => handler.Handle(command).AsTask());
         Assert.Contains("tenant", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -117,7 +117,7 @@ public sealed class UploadDocumentHandlerTests
         var content = CreateContentStream("hello world");
         var command = new UploadDocumentCommand("report.pdf", "application/pdf", content.Length, content, "test-10");
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(command).AsTask());
+        var ex = await Assert.ThrowsAsync<IsolationViolationException>(() => handler.Handle(command).AsTask());
         Assert.Contains("user", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -326,6 +326,7 @@ public sealed class UploadDocumentHandlerTests
 
         return new UploadDocumentHandler(
             new FakeFileStorage(),
+            new OpenRAG.Application.Storage.DocumentObjectKeyPolicy(),
             new FakeDocumentRepository(),
             new FakeProcessingRunRepository(),
             new FakeDocumentEventBus(),
@@ -346,7 +347,16 @@ public sealed class UploadDocumentHandlerTests
         var clock = new StubClock();
         var uow = new FakeUnitOfWork();
 
-        var handler = new UploadDocumentHandler(storage, docRepo, runRepo, eventBus, tenant, user, clock, uow);
+        var handler = new UploadDocumentHandler(
+            storage,
+            new OpenRAG.Application.Storage.DocumentObjectKeyPolicy(),
+            docRepo,
+            runRepo,
+            eventBus,
+            tenant,
+            user,
+            clock,
+            uow);
         return (handler, new FakeHolder(storage, docRepo, runRepo, eventBus, uow));
     }
 

@@ -17,6 +17,25 @@ public sealed class EfDocumentEmbeddingRepository : IDocumentEmbeddingRepository
         IReadOnlyCollection<DocumentEmbedding> embeddings,
         CancellationToken cancellationToken = default)
     {
+        if (embeddings.Count == 0)
+            return;
+
+        var first = embeddings.First();
+        var tenantId = first.TenantId;
+        var documentId = first.DocumentId;
+        var versionId = first.VersionId;
+        RepositoryIsolationGuard.NonEmpty(tenantId, nameof(tenantId));
+        RepositoryIsolationGuard.NonEmpty(documentId, nameof(documentId));
+        RepositoryIsolationGuard.NonEmpty(versionId, nameof(versionId));
+        foreach (var embedding in embeddings)
+        {
+            RepositoryIsolationGuard.Equal(embedding.TenantId, tenantId, nameof(embedding.TenantId));
+            RepositoryIsolationGuard.Equal(embedding.DocumentId, documentId, nameof(embedding.DocumentId));
+            RepositoryIsolationGuard.Equal(embedding.VersionId, versionId, nameof(embedding.VersionId));
+            RepositoryIsolationGuard.NonEmpty(embedding.ChunkId, nameof(embedding.ChunkId));
+            RepositoryIsolationGuard.NonEmpty(embedding.Id, nameof(embedding.Id));
+        }
+
         await _dbContext.DocumentEmbeddings.AddRangeAsync(embeddings, cancellationToken);
     }
 

@@ -42,7 +42,7 @@ public sealed class ListDocumentChunksHandlerTests
         var fakes = new Fakes(Array.Empty<DocumentChunk>(), 0, null, useVersion: false);
         var handler = new ListDocumentChunksHandler(fakes.ChunkRepo, fakes.DocRepo, fakes.Tenant);
 
-        var ex = await Assert.ThrowsAsync<AppException>(() =>
+        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
             handler.Handle(new ListDocumentChunksQuery(DocId, VerId)).AsTask());
         Assert.Contains("not found", ex.Message);
     }

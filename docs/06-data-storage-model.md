@@ -253,6 +253,10 @@ tenants/{tenantId}/documents/{documentId}/versions/{versionId}/images/{imageId}.
 tenants/{tenantId}/documents/{documentId}/versions/{versionId}/tables/{tableId}.json
 ```
 
+Implemented document objects use the first three canonical forms with lowercase path labels and `Guid:D` identifiers. `IDocumentObjectKeyPolicy` builds and validates source, Markdown, and JSON keys using the complete tenant/document/version prefix and ordinal comparison. Persisted keys are untrusted: absolute paths, backslashes, traversal/dot segments, wrong prefixes, and wrong artifact suffixes fail closed before storage I/O.
+
+The `EnforceTenantRelationshipIsolation` migration adds tenant-inclusive alternate keys and composite foreign keys from versions to documents, chunks/intelligence/processing runs to versions, embeddings to chunks, and processing steps to runs. This prevents otherwise-valid IDs from being combined across tenants. The migration preserves valid data but constraint validation and index creation require locks; preflight legacy rows, back up, and schedule a maintenance window. See [authorization and retrieval isolation](17-authorization-and-isolation.md).
+
 ## File storage abstraction
 
 Prefer a rich result instead of returning only object key.

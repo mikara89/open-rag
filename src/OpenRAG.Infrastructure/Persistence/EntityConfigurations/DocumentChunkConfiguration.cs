@@ -11,6 +11,7 @@ public sealed class DocumentChunkConfiguration : IEntityTypeConfiguration<Docume
         builder.ToTable("document_chunks");
 
         builder.HasKey(c => c.Id);
+        builder.HasAlternateKey(c => new { c.TenantId, c.DocumentId, c.VersionId, c.Id });
 
         builder.Property(c => c.TenantId)
             .IsRequired();
@@ -44,6 +45,12 @@ public sealed class DocumentChunkConfiguration : IEntityTypeConfiguration<Docume
 
         builder.Property(c => c.CreatedAt)
             .IsRequired();
+
+        builder.HasOne<DocumentVersion>()
+            .WithMany()
+            .HasForeignKey(c => new { c.TenantId, c.DocumentId, c.VersionId })
+            .HasPrincipalKey(v => new { v.TenantId, v.DocumentId, v.Id })
+            .OnDelete(DeleteBehavior.Cascade);
 
         // Indexes
         builder.HasIndex(c => new { c.TenantId, c.DocumentId });

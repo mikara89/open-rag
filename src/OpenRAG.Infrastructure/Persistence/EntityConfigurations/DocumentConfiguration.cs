@@ -11,6 +11,7 @@ public sealed class DocumentConfiguration : IEntityTypeConfiguration<Document>
         builder.ToTable("documents");
 
         builder.HasKey(d => d.Id);
+        builder.HasAlternateKey(d => new { d.TenantId, d.Id });
 
         builder.Property(d => d.TenantId)
             .IsRequired();
@@ -43,18 +44,10 @@ public sealed class DocumentConfiguration : IEntityTypeConfiguration<Document>
         builder.Property(d => d.DeletedAt)
             .IsRequired(false);
 
-        // Navigation: Document has many DocumentVersions via backing field _versions
-        builder.HasMany<DocumentVersion>("_versions")
-            .WithOne()
-            .HasForeignKey(v => v.DocumentId)
-            .HasPrincipalKey(d => d.Id)
-            .OnDelete(DeleteBehavior.Cascade);
-
         builder.Ignore(d => d.Versions);
 
         // Indexes
         builder.HasIndex(d => d.TenantId);
-        builder.HasIndex(d => new { d.TenantId, d.Id });
         builder.HasIndex(d => new { d.TenantId, d.Status });
         builder.HasIndex(d => new { d.TenantId, d.CurrentVersionId });
     }

@@ -110,7 +110,10 @@ public sealed class DoclingServeDocumentPreprocessorTests
         var logger = NullLogger<DoclingServeDocumentPreprocessor>.Instance;
         var service = new DoclingServeDocumentPreprocessor(
             new HttpClient(handler) { BaseAddress = new Uri("http://localhost:5001") },
-            fileStorage, options, logger);
+            fileStorage,
+            new OpenRAG.Application.Storage.DocumentObjectKeyPolicy(),
+            options,
+            logger);
 
         await service.PreprocessAsync(CreateRequest());
 
@@ -150,7 +153,10 @@ public sealed class DoclingServeDocumentPreprocessorTests
         var logger = NullLogger<DoclingServeDocumentPreprocessor>.Instance;
         var service = new DoclingServeDocumentPreprocessor(
             new HttpClient(handler) { BaseAddress = new Uri("http://localhost:5001") },
-            fileStorage, options, logger);
+            fileStorage,
+            new OpenRAG.Application.Storage.DocumentObjectKeyPolicy(),
+            options,
+            logger);
 
         await service.PreprocessAsync(CreateRequest());
 
@@ -285,14 +291,21 @@ public sealed class DoclingServeDocumentPreprocessorTests
 
     // ══ Helpers ═══════════════════════════════════════════════════
 
-    private static DocumentPreprocessingRequest CreateRequest() => new(
-        TenantId: Guid.NewGuid(),
-        DocumentId: Guid.NewGuid(),
-        VersionId: Guid.NewGuid(),
-        OriginalObjectKey: "tenants/t/doc/v/orig/test.md",
-        FileName: "test.md",
-        MimeType: "text/markdown",
-        CorrelationId: "corr");
+    private static DocumentPreprocessingRequest CreateRequest()
+    {
+        var tenantId = Guid.NewGuid();
+        var documentId = Guid.NewGuid();
+        var versionId = Guid.NewGuid();
+        return new DocumentPreprocessingRequest(
+            TenantId: tenantId,
+            DocumentId: documentId,
+            VersionId: versionId,
+            OriginalObjectKey:
+                $"tenants/{tenantId:D}/documents/{documentId:D}/versions/{versionId:D}/original/test.md",
+            FileName: "test.md",
+            MimeType: "text/markdown",
+            CorrelationId: "corr");
+    }
 
     private static DoclingServeDocumentPreprocessor CreateService(HttpMessageHandler handler)
     {
@@ -305,7 +318,12 @@ public sealed class DoclingServeDocumentPreprocessorTests
             ConvertFilePath = "/v1/convert/file"
         });
         var logger = NullLogger<DoclingServeDocumentPreprocessor>.Instance;
-        return new DoclingServeDocumentPreprocessor(httpClient, fileStorage, options, logger);
+        return new DoclingServeDocumentPreprocessor(
+            httpClient,
+            fileStorage,
+            new OpenRAG.Application.Storage.DocumentObjectKeyPolicy(),
+            options,
+            logger);
     }
 
     private static HttpMessageHandler CreateHandler(HttpStatusCode status, string responseBody)

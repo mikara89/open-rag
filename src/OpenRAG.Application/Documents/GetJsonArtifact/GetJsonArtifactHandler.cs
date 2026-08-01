@@ -10,15 +10,18 @@ public sealed class GetJsonArtifactHandler : IRequestHandler<GetJsonArtifactQuer
 {
     private readonly IDocumentRepository _documentRepository;
     private readonly IFileStorage _fileStorage;
+    private readonly IDocumentObjectKeyPolicy _objectKeyPolicy;
     private readonly ICurrentTenant _currentTenant;
 
     public GetJsonArtifactHandler(
         IDocumentRepository documentRepository,
         IFileStorage fileStorage,
+        IDocumentObjectKeyPolicy objectKeyPolicy,
         ICurrentTenant currentTenant)
     {
         _documentRepository = documentRepository;
         _fileStorage = fileStorage;
+        _objectKeyPolicy = objectKeyPolicy;
         _currentTenant = currentTenant;
     }
 
@@ -28,14 +31,29 @@ public sealed class GetJsonArtifactHandler : IRequestHandler<GetJsonArtifactQuer
     {
         var tenantId = _currentTenant.TenantId;
 
+        if (query.DocumentId == Guid.Empty || query.VersionId == Guid.Empty)
+            throw new RequestValidationException("Document and version identifiers must be non-empty.");
+
         var version = await _documentRepository.GetVersionAsync(
             tenantId, query.DocumentId, query.VersionId, cancellationToken);
 
         if (version is null)
-            throw new AppException($"Version '{query.VersionId}' not found for document '{query.DocumentId}'.");
+            throw new ResourceNotFoundException();
 
-        if (string.IsNullOrWhiteSpace(version.DoclingJsonObjectKey))
-            throw new AppException("JSON artifact not available for this version.");
+        IsolationGuard.Equal(version.TenantId, tenantId, nameof(version.TenantId));
+        IsolationGuard.Equal(version.DocumentId, query.DocumentId, nameof(version.DocumentId));
+        IsolationGuard.Equal(version.Id, query.VersionId, nameof(version.Id));
+
+        if (string.IsNullOrWhiteSpace(version.DoclingJsonObjectKey)
+            || string.Equals(version.DoclingJsonObjectKey, "pending", StringComparison.Ordinal))
+            throw new ResourceNotFoundException();
+
+        _objectKeyPolicy.EnsureOwned(
+            version.DoclingJsonObjectKey,
+            tenantId,
+            query.DocumentId,
+            query.VersionId,
+            DocumentObjectKind.Json);
 
         await using var stream = await _fileStorage.OpenReadAsync(
             version.DoclingJsonObjectKey, cancellationToken);

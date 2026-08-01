@@ -13,6 +13,7 @@ public sealed record VectorSearchRequest(
 );
 
 public sealed record VectorSearchResultItem(
+    Guid TenantId,
     Guid ChunkId,
     Guid DocumentId,
     Guid VersionId,

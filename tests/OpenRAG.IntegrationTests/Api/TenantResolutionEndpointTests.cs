@@ -130,7 +130,14 @@ public sealed class TenantResolutionEndpointTests
             return Task.FromResult(new VectorSearchResponse(
             [
                 new VectorSearchResultItem(
-                    Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "Trusted context", null, null, 0.9)
+                    request.TenantId,
+                    Guid.NewGuid(),
+                    Guid.NewGuid(),
+                    Guid.NewGuid(),
+                    "Trusted context",
+                    null,
+                    null,
+                    0.9)
             ],
             1,
             1,

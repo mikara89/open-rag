@@ -20,7 +20,7 @@ public sealed class DeleteDocumentHandlerTests
         var fakes = new Fakes(null);
         var handler = CreateHandler(fakes);
 
-        var ex = await Assert.ThrowsAsync<AppException>(() =>
+        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
             handler.Handle(new DeleteDocumentCommand(DocId)).AsTask());
 
         Assert.Contains("not found", ex.Message);
@@ -34,7 +34,7 @@ public sealed class DeleteDocumentHandlerTests
         var fakes = new Fakes(doc);
         var handler = CreateHandler(fakes);
 
-        var ex = await Assert.ThrowsAsync<AppException>(() =>
+        var ex = await Assert.ThrowsAsync<ResourceConflictException>(() =>
             handler.Handle(new DeleteDocumentCommand(DocId)).AsTask());
 
         Assert.Contains("processing", ex.Message.ToLower());
@@ -98,9 +98,11 @@ public sealed class DeleteDocumentHandlerTests
     {
         var doc = Document.Create(DocId, TenantId, "test.md", "test.md", UserId);
         doc.MarkProcessing();
-        doc.AddVersion(VerId, 1, "tenants/.../original/test.md", "text/markdown", 1024, "abc");
+        doc.AddVersion(VerId, 1, $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/original/test.md", "text/markdown", 1024, "abc");
         var version = doc.Versions.First();
-        version.AttachDoclingArtifacts("mk-key", "json-key");
+        version.AttachDoclingArtifacts(
+            $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/docling/document.md",
+            $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/docling/document.json");
         version.MarkPreprocessed();
         doc.MarkReady();
         return doc;
@@ -110,6 +112,7 @@ public sealed class DeleteDocumentHandlerTests
     {
         return new DeleteDocumentHandler(
             fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, new StubFileStorage(),
+            new OpenRAG.Application.Storage.DocumentObjectKeyPolicy(),
             fakes.Tenant, fakes.Uow,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<DeleteDocumentHandler>.Instance);
     }

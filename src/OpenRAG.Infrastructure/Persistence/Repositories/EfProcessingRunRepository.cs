@@ -17,6 +17,10 @@ public sealed class EfProcessingRunRepository : IProcessingRunRepository
         DocumentProcessingRun processingRun,
         CancellationToken cancellationToken = default)
     {
+        RepositoryIsolationGuard.NonEmpty(processingRun.TenantId, nameof(processingRun.TenantId));
+        RepositoryIsolationGuard.NonEmpty(processingRun.DocumentId, nameof(processingRun.DocumentId));
+        RepositoryIsolationGuard.NonEmpty(processingRun.VersionId, nameof(processingRun.VersionId));
+        RepositoryIsolationGuard.NonEmpty(processingRun.Id, nameof(processingRun.Id));
         await _dbContext.DocumentProcessingRuns.AddAsync(processingRun, cancellationToken);
     }
 
@@ -44,10 +48,17 @@ public sealed class EfProcessingRunRepository : IProcessingRunRepository
     }
 
     public async Task AddStepAsync(
-        DocumentProcessingStep step,
+        DocumentProcessingStep processingStep,
         CancellationToken cancellationToken = default)
     {
-        await _dbContext.DocumentProcessingSteps.AddAsync(step, cancellationToken);
+        RepositoryIsolationGuard.NonEmpty(processingStep.TenantId, nameof(processingStep.TenantId));
+        RepositoryIsolationGuard.NonEmpty(processingStep.DocumentId, nameof(processingStep.DocumentId));
+        RepositoryIsolationGuard.NonEmpty(processingStep.VersionId, nameof(processingStep.VersionId));
+        RepositoryIsolationGuard.NonEmpty(
+            processingStep.ProcessingRunId,
+            nameof(processingStep.ProcessingRunId));
+        RepositoryIsolationGuard.NonEmpty(processingStep.Id, nameof(processingStep.Id));
+        await _dbContext.DocumentProcessingSteps.AddAsync(processingStep, cancellationToken);
     }
 
     public async Task<DocumentProcessingStep?> GetStepAsync(

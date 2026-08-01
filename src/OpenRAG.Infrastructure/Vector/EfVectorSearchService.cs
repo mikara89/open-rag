@@ -1,15 +1,15 @@
-using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using OpenRAG.Application.Abstractions.Vector;
+using OpenRAG.Application.Common;
+using OpenRAG.Domain.Documents;
 using OpenRAG.Infrastructure.Persistence;
+using Pgvector;
 
 namespace OpenRAG.Infrastructure.VectorSearch;
 
 /// <summary>
-/// PostgreSQL pgvector-backed vector search service.
-/// Uses the pgvector &lt;=&gt; (cosine distance) operator for server-side similarity search.
-/// Queries embeddings filtered by tenant and compatibility, orders by cosine distance,
-/// and returns top-K results with associated chunk content.
+/// Audited PostgreSQL pgvector query. All variable values remain interpolation
+/// arguments on FormattableString instances so EF/Npgsql parameterizes them.
 /// </summary>
 public sealed class EfVectorSearchService : IVectorSearchService
 {
@@ -24,128 +24,176 @@ public sealed class EfVectorSearchService : IVectorSearchService
         VectorSearchRequest request,
         CancellationToken cancellationToken = default)
     {
-        // 1. Validate
-        if (request.QueryVector is null || request.QueryVector.Count == 0)
-            return new VectorSearchResponse(Array.Empty<VectorSearchResultItem>(), 0, 0, "Query vector is empty.");
+        Validate(request);
 
-        if (request.Limit <= 0)
-            return new VectorSearchResponse(Array.Empty<VectorSearchResultItem>(), 0, 0, null);
-
-        // 2. Build query for tenant
-        var query = _dbContext.DocumentEmbeddings
-            .AsNoTracking()
-            .Where(e => e.TenantId == request.TenantId);
-
-        // 3. Optionally filter by DocumentIds
-        if (request.DocumentIds is not null && request.DocumentIds.Count > 0)
-        {
-            query = query.Where(e => request.DocumentIds.Contains(e.DocumentId));
-        }
-
-        // 4. Compatibility filtering (provider, model, dimensions, version)
-        if (!string.IsNullOrWhiteSpace(request.EmbeddingModel))
-            query = query.Where(e => e.EmbeddingModel == request.EmbeddingModel);
-
-        if (!string.IsNullOrWhiteSpace(request.EmbeddingProvider))
-            query = query.Where(e => e.EmbeddingProvider == request.EmbeddingProvider);
-
-        if (request.EmbeddingDimensions.HasValue)
-            query = query.Where(e => e.EmbeddingDimensions == request.EmbeddingDimensions.Value);
-
-        if (!string.IsNullOrWhiteSpace(request.EmbeddingVersion))
-            query = query.Where(e => e.EmbeddingVersion == request.EmbeddingVersion);
-
-        // Count totals for diagnostics
-        var totalCount = await _dbContext.DocumentEmbeddings
-            .AsNoTracking()
-            .CountAsync(e => e.TenantId == request.TenantId, cancellationToken);
-
+        var totalCount = await BuildTotalCountQuery(request)
+            .SingleAsync(cancellationToken);
         if (totalCount == 0)
+        {
             return new VectorSearchResponse(
                 Array.Empty<VectorSearchResultItem>(),
-                TotalEmbeddingCount: 0,
-                CompatibleEmbeddingCount: 0,
-                DiagnosticMessage: "No indexed document embeddings were found for this tenant.");
+                0,
+                0,
+                "No indexed document embeddings were found in the authorized scope.");
+        }
 
-        var compatibleCount = await query.CountAsync(cancellationToken);
-
+        var compatibleCount = await BuildCompatibleCountQuery(request)
+            .SingleAsync(cancellationToken);
         if (compatibleCount == 0)
         {
-            var diagMsg = $"Indexed embeddings exist ({totalCount} total), but none match the current query embedding: " +
-                          $"model={request.EmbeddingModel ?? "any"}, dimensions={request.EmbeddingDimensions?.ToString() ?? "any"}. " +
-                          $"Re-index documents with the same embedding provider/model, " +
-                          $"or switch the ask endpoint to the same embedding provider used during ingestion.";
             return new VectorSearchResponse(
                 Array.Empty<VectorSearchResultItem>(),
-                totalCount, 0, diagMsg);
+                totalCount,
+                0,
+                "No compatible document embeddings were found in the authorized scope.");
         }
 
-        // 5. Server-side pgvector cosine distance search
-        // The pgvector <=> operator computes cosine distance: 1 - cosine_similarity.
-        // Order by distance ascending (lower distance = more similar).
-        var vectorLiteral = "[" + string.Join(",",
-            request.QueryVector.Select(f => f.ToString(CultureInfo.InvariantCulture))) + "]";
-
-        // Use FromSqlInterpolated for parameterized query with pgvector operator.
-        // The vector literal is safe: it consists of float values formatted with InvariantCulture.
-        var sql = $"""
-            SELECT e."Id", e."ChunkId", e."DocumentId", e."VersionId",
-                   c."Content", c."PageNumber", c."SectionTitle",
-                   1.0 - (e."Vector" <=> '{vectorLiteral}'::vector) AS "Score"
-            FROM document_embeddings e
-            LEFT JOIN document_chunks c ON c."Id" = e."ChunkId" AND c."TenantId" = e."TenantId"
-            WHERE e."TenantId" = {request.TenantId}
-              AND e."EmbeddingModel" = {request.EmbeddingModel ?? ""}
-              AND e."EmbeddingDimensions" = {request.EmbeddingDimensions ?? 0}
-            ORDER BY e."Vector" <=> '{vectorLiteral}'::vector
-            LIMIT {request.Limit}
-            """;
-
-        var searchResults = await _dbContext.Database
-            .SqlQuery<VectorSearchRawResult>($"{sql}")
-            .ToListAsync(cancellationToken);
-
-        if (searchResults.Count == 0)
-        {
-            return new VectorSearchResponse(
-                Array.Empty<VectorSearchResultItem>(),
-                totalCount, compatibleCount,
-                "No embeddings matched the query vector dimensions.");
-        }
-
-        // 6. Map results
-        var results = searchResults.Select(r => new VectorSearchResultItem(
-            ChunkId: r.ChunkId,
-            DocumentId: r.DocumentId,
-            VersionId: r.VersionId,
-            Content: r.Content ?? "[chunk not found]",
-            PageNumber: r.PageNumber,
-            SectionTitle: r.SectionTitle,
-            Score: Math.Max(0.0, r.Score))).ToList();
+        var rows = await BuildSearchQuery(request).ToListAsync(cancellationToken);
+        var results = rows.Select(row => new VectorSearchResultItem(
+            TenantId: row.TenantId,
+            ChunkId: row.ChunkId,
+            DocumentId: row.DocumentId,
+            VersionId: row.VersionId,
+            Content: row.Content,
+            PageNumber: row.PageNumber,
+            SectionTitle: row.SectionTitle,
+            Score: Math.Max(0.0, row.Score))).ToArray();
 
         return new VectorSearchResponse(results, totalCount, compatibleCount, null);
     }
 
-    /// <summary>
-    /// Raw result shape for SqlQuery mapping. Property names must match the SQL column aliases.
-    /// </summary>
-    private sealed class VectorSearchRawResult
+    internal IQueryable<int> BuildTotalCountQuery(VectorSearchRequest request)
     {
-        public Guid Id { get; init; }
+        var documentIds = NormalizeDocumentIds(request.DocumentIds);
+        var deletedStatus = DocumentStatus.Deleted.ToString();
+
+        return _dbContext.Database.SqlQuery<int>($"""
+            SELECT COUNT(*)::integer AS "Value"
+            FROM document_embeddings e
+            INNER JOIN documents d
+              ON d."TenantId" = e."TenantId"
+             AND d."Id" = e."DocumentId"
+            INNER JOIN document_versions v
+              ON v."TenantId" = e."TenantId"
+             AND v."DocumentId" = e."DocumentId"
+             AND v."Id" = e."VersionId"
+            INNER JOIN document_chunks c
+              ON c."TenantId" = e."TenantId"
+             AND c."DocumentId" = e."DocumentId"
+             AND c."VersionId" = e."VersionId"
+             AND c."Id" = e."ChunkId"
+            WHERE e."TenantId" = {request.TenantId}
+              AND d."Status" <> {deletedStatus}
+              AND (cardinality({documentIds}) = 0 OR e."DocumentId" = ANY({documentIds}))
+            """);
+    }
+
+    internal IQueryable<int> BuildCompatibleCountQuery(VectorSearchRequest request)
+    {
+        var documentIds = NormalizeDocumentIds(request.DocumentIds);
+        var provider = NormalizeOptional(request.EmbeddingProvider);
+        var model = NormalizeOptional(request.EmbeddingModel);
+        var dimensions = request.EmbeddingDimensions ?? 0;
+        var version = NormalizeOptional(request.EmbeddingVersion);
+        var deletedStatus = DocumentStatus.Deleted.ToString();
+
+        return _dbContext.Database.SqlQuery<int>($"""
+            SELECT COUNT(*)::integer AS "Value"
+            FROM document_embeddings e
+            INNER JOIN documents d
+              ON d."TenantId" = e."TenantId"
+             AND d."Id" = e."DocumentId"
+            INNER JOIN document_versions v
+              ON v."TenantId" = e."TenantId"
+             AND v."DocumentId" = e."DocumentId"
+             AND v."Id" = e."VersionId"
+            INNER JOIN document_chunks c
+              ON c."TenantId" = e."TenantId"
+             AND c."DocumentId" = e."DocumentId"
+             AND c."VersionId" = e."VersionId"
+             AND c."Id" = e."ChunkId"
+            WHERE e."TenantId" = {request.TenantId}
+              AND d."Status" <> {deletedStatus}
+              AND (cardinality({documentIds}) = 0 OR e."DocumentId" = ANY({documentIds}))
+              AND ({provider} = '' OR e."EmbeddingProvider" = {provider})
+              AND ({model} = '' OR e."EmbeddingModel" = {model})
+              AND ({dimensions} = 0 OR e."EmbeddingDimensions" = {dimensions})
+              AND ({version} = '' OR e."EmbeddingVersion" = {version})
+            """);
+    }
+
+    internal IQueryable<VectorSearchRawResult> BuildSearchQuery(VectorSearchRequest request)
+    {
+        var documentIds = NormalizeDocumentIds(request.DocumentIds);
+        var provider = NormalizeOptional(request.EmbeddingProvider);
+        var model = NormalizeOptional(request.EmbeddingModel);
+        var dimensions = request.EmbeddingDimensions ?? 0;
+        var version = NormalizeOptional(request.EmbeddingVersion);
+        var deletedStatus = DocumentStatus.Deleted.ToString();
+        var queryVector = new Vector(request.QueryVector.ToArray());
+
+        return _dbContext.Database.SqlQuery<VectorSearchRawResult>($"""
+            SELECT e."TenantId", e."ChunkId", e."DocumentId", e."VersionId",
+                   c."Content", c."PageNumber", c."SectionTitle",
+                   1.0 - (e."Vector" <=> {queryVector}) AS "Score"
+            FROM document_embeddings e
+            INNER JOIN documents d
+              ON d."TenantId" = e."TenantId"
+             AND d."Id" = e."DocumentId"
+            INNER JOIN document_versions v
+              ON v."TenantId" = e."TenantId"
+             AND v."DocumentId" = e."DocumentId"
+             AND v."Id" = e."VersionId"
+            INNER JOIN document_chunks c
+              ON c."TenantId" = e."TenantId"
+             AND c."DocumentId" = e."DocumentId"
+             AND c."VersionId" = e."VersionId"
+             AND c."Id" = e."ChunkId"
+            WHERE e."TenantId" = {request.TenantId}
+              AND d."Status" <> {deletedStatus}
+              AND (cardinality({documentIds}) = 0 OR e."DocumentId" = ANY({documentIds}))
+              AND ({provider} = '' OR e."EmbeddingProvider" = {provider})
+              AND ({model} = '' OR e."EmbeddingModel" = {model})
+              AND ({dimensions} = 0 OR e."EmbeddingDimensions" = {dimensions})
+              AND ({version} = '' OR e."EmbeddingVersion" = {version})
+            ORDER BY e."Vector" <=> {queryVector}
+            LIMIT {request.Limit}
+            """);
+    }
+
+    private static Guid[] NormalizeDocumentIds(IReadOnlyCollection<Guid>? documentIds) =>
+        documentIds?.Distinct().ToArray() ?? Array.Empty<Guid>();
+
+    private static string NormalizeOptional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? string.Empty : value;
+
+    private static void Validate(VectorSearchRequest request)
+    {
+        if (request.TenantId == Guid.Empty)
+            throw new IsolationViolationException("Vector search tenant scope is empty.");
+
+        if (request.QueryVector is null || request.QueryVector.Count == 0)
+            throw new RequestValidationException("The query vector cannot be empty.");
+
+        if (request.Limit <= 0)
+            throw new RequestValidationException("The vector result limit must be positive.");
+
+        if (request.DocumentIds?.Any(id => id == Guid.Empty) == true)
+            throw new RequestValidationException("Vector document filters must be non-empty identifiers.");
+    }
+
+    internal sealed class VectorSearchRawResult
+    {
+        public Guid TenantId { get; init; }
         public Guid ChunkId { get; init; }
         public Guid DocumentId { get; init; }
         public Guid VersionId { get; init; }
-        public string? Content { get; init; }
+        public required string Content { get; init; }
         public int? PageNumber { get; init; }
         public string? SectionTitle { get; init; }
         public double Score { get; init; }
     }
 
-    /// <summary>
-    /// Computes cosine similarity between two float vectors.
-    /// Kept for backward compatibility with unit tests and for cases where
-    /// server-side pgvector search is not available (e.g. in-memory fakes).
-    /// </summary>
     internal static double CosineSimilarity(IReadOnlyList<float> left, IReadOnlyList<float> right)
     {
         if (left.Count != right.Count)

@@ -28,6 +28,7 @@ $env:OPENRAG_ACCESS_TOKEN = "<access token obtained outside OpenRAG>"
 ```
 
 OpenRAG validates tokens but does not issue them. See [JWT authentication](15-authentication.md) and [trusted tenant resolution](16-trusted-tenant-resolution.md) for the full contract.
+Tenant authorization and retrieval isolation are described in [authorization and retrieval isolation](17-authorization-and-isolation.md). A foreign document ID and a random missing document ID both return the same generic 404. Caller-supplied tenant selection is never accepted.
 The full MVP smoke test calls the provider-diagnostics endpoint, so its token must include exactly one valid GUID user-ID claim, exactly one valid GUID tenant claim, and the configured `admin` role. The RAG body contains no tenant ID; the token supplies it. Never add a tenant-selection header.
 
 ### 1. Configure mock providers
