@@ -2,9 +2,9 @@
 
 ## Status
 
-The settings below are **recommended and not enabled as of 2026-08-01**. The branch-protection API returned `Branch not protected`. Apply the recommendations only after a maintainer explicitly approves repository-setting changes and after the required CI check names have appeared in a successful GitHub Actions run.
+The settings below were **enabled and verified on 2026-08-01** after explicit maintainer approval. The branch-protection API confirms that pull requests, strict required status checks, conversation resolution, stale-review dismissal, and force-push and deletion blocking are active for `main`. The required checks are `Build, test, and format` and `Documentation checks`.
 
-## Recommended protection for `main`
+## Active protection for `main`
 
 - Require changes to enter through a pull request.
 - With the current single maintainer, do not require self-approval. Require at least one approval once more than one maintainer can review.
@@ -44,7 +44,7 @@ gh api repos/mikara89/open-rag/branches/main/protection
 gh api repos/mikara89/open-rag/rulesets
 ```
 
-The following classic branch-protection example is a **mutation**. Review it, set `required_approving_review_count` to `1` when a second maintainer exists, and run it only after explicit authorization:
+The following classic branch-protection configuration was applied on 2026-08-01. Reapplying or changing it is a **mutation**: review it, set `required_approving_review_count` to `1` when a second maintainer exists, and run it only after explicit authorization:
 
 ```powershell
 $protection = @{

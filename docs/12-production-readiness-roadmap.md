@@ -13,7 +13,7 @@ This is a production-oriented development baseline, not a production deployment.
 - **Objective:** Prove dependency-free GitHub CI on a pull request and establish the repository files and documented controls needed for PR-based development.
 - **Acceptance criteria:** A feature-branch PR runs green `Build, test, and format` and `Documentation checks` jobs; test-result and coverage artifacts are downloadable; CODEOWNERS, issue forms, the PR template, security policy, and governance guidance are present; recommended `main` protection is enabled and verified after explicit maintainer authorization.
 - **Dependencies:** Existing build/test/format scripts and GitHub Actions access. Repository-setting changes require separate maintainer approval.
-- **Status:** In progress
+- **Status:** Complete
 
 ### P0.2 — Authentication foundation
 
