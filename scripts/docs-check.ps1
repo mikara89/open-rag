@@ -8,7 +8,9 @@ $requiredFiles = @(
     "docs/10-configuration-and-secrets.md",
     "docs/11-mvp-local-run.md",
     "docs/12-production-readiness-roadmap.md",
-    "docs/13-documentation-review-checklist.md"
+    "docs/13-documentation-review-checklist.md",
+    "docs/14-github-governance.md",
+    "SECURITY.md"
 )
 
 $errors = [System.Collections.Generic.List[string]]::new()
@@ -44,6 +46,7 @@ if (Test-Path -LiteralPath $readmePath -PathType Leaf) {
 
 $markdownFiles = @()
 $markdownFiles += Get-Item -LiteralPath $readmePath -ErrorAction SilentlyContinue
+$markdownFiles += Get-Item -LiteralPath (Join-Path $repositoryRoot "SECURITY.md") -ErrorAction SilentlyContinue
 $markdownFiles += Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "docs") -Filter "*.md" -File -Recurse
 
 $githubPath = Join-Path $repositoryRoot ".github"

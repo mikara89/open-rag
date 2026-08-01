@@ -16,8 +16,14 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  CI: "true"
   DOTNET_CLI_TELEMETRY_OPTOUT: "1"
   DOTNET_NOLOGO: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+  DOTNET_MULTILEVEL_LOOKUP: "0"
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  NUGET_XMLDOC_MODE: skip
+  TZ: UTC
 
 jobs:
   build-test-format:
@@ -27,21 +33,51 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.110
+          cache: true
+          cache-dependency-path: |
+            Directory.Build.props
+            Directory.Packages.props
+            dotnet-tools.json
+            **/*.csproj
 
       - name: Restore
         run: dotnet restore OpenRAG.slnx
 
       - name: Build
-        run: dotnet build OpenRAG.slnx --no-restore
+        run: dotnet build OpenRAG.slnx --configuration Release --no-restore -p:ContinuousIntegrationBuild=true
 
       - name: Test
-        run: dotnet test OpenRAG.slnx --no-build
+        run: >-
+          dotnet test OpenRAG.slnx
+          --configuration Release
+          --no-build
+          --logger trx
+          --results-directory artifacts/test-results
+          --collect "XPlat Code Coverage"
+
+      - name: Upload test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: openrag-test-results
+          path: artifacts/test-results/**/*.trx
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload code coverage
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: openrag-code-coverage
+          path: artifacts/test-results/*/coverage.cobertura.xml
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Verify whitespace formatting
         run: dotnet format whitespace OpenRAG.slnx --verify-no-changes --no-restore
@@ -56,7 +92,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Validate documentation
         shell: pwsh

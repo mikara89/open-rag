@@ -1,5 +1,5 @@
 # OpenRAG local CI entrypoint.
-# Runs the same build/test/format and documentation checks as GitHub Actions.
+# Runs the same Release build/test/coverage/format and documentation checks as GitHub Actions.
 $ErrorActionPreference = "Stop"
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot

@@ -1,0 +1,8 @@
+* @mikara89
+
+/.github/ @mikara89
+/docs/ @mikara89
+/src/OpenRAG.Domain/ @mikara89
+/src/OpenRAG.Application/ @mikara89
+/src/OpenRAG.Infrastructure/ @mikara89
+/src/OpenRAG.Infrastructure/Persistence/Migrations/ @mikara89

@@ -1,0 +1,78 @@
+name: Production-readiness item
+description: Track a concrete gap that must close before production use.
+title: "[Production readiness]: "
+body:
+  - type: dropdown
+    id: domain
+    attributes:
+      label: Readiness domain
+      options:
+        - CI and repository governance
+        - Authentication and authorization
+        - Tenant isolation
+        - Data storage and recovery
+        - Reliability and operations
+        - Observability
+        - Security and dependencies
+        - Deployment and delivery
+        - Performance and capacity
+    validations:
+      required: true
+
+  - type: textarea
+    id: risk
+    attributes:
+      label: Current risk
+      description: Describe the failure mode, exposure, and affected users or operators.
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Proposed outcome
+      description: Describe the production-ready end state rather than only implementation tasks.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: rollout
+    attributes:
+      label: Rollout or migration impact
+      description: Include compatibility, data movement, sequencing, downtime, and operator actions.
+    validations:
+      required: true
+
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Rollback or recovery
+      description: Explain how to restore service and data if rollout fails.
+    validations:
+      required: true
+
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and tenant impact
+      description: Identify authorization, tenant isolation, secret, privacy, and audit implications.
+    validations:
+      required: true
+
+  - type: textarea
+    id: documentation
+    attributes:
+      label: Documentation impact
+      description: List architecture, configuration, API, operations, migration, or troubleshooting docs that must change.
+    validations:
+      required: true

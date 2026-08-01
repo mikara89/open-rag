@@ -1,0 +1,45 @@
+name: Feature request
+description: Propose a scoped product, API, or engineering improvement.
+title: "[Feature]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the user or engineering problem without prescribing a solution first.
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the observable result and who benefits.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: Outline a possible implementation, alternatives, and tradeoffs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: impacts
+    attributes:
+      label: Security, migration, and documentation impact
+      description: Cover tenant isolation, secrets, compatibility, rollout, and documentation, or state why each is not applicable.
+    validations:
+      required: true
