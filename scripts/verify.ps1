@@ -1,7 +1,9 @@
 # OpenRAG local validation script
-# Runs restore, build, test, and format checks.
+# Runs the same restore, Release build, Release test/coverage, and format checks as CI.
 param(
-    [switch]$SkipFormat
+    [switch]$SkipFormat,
+    [string]$Configuration = "Release",
+    [string]$ResultsDirectory = "artifacts/test-results"
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,21 +15,58 @@ Write-Host "  OpenRAG Validation" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 
 $solution = "OpenRAG.slnx"
+$resultsCandidate = if ([IO.Path]::IsPathRooted($ResultsDirectory)) {
+    $ResultsDirectory
+} else {
+    Join-Path $root $ResultsDirectory
+}
+
+$resolvedResultsDirectory = [IO.Path]::GetFullPath($resultsCandidate)
+$allowedResultsRoot = [IO.Path]::GetFullPath((Join-Path $root "artifacts"))
+$allowedPrefix = $allowedResultsRoot + [IO.Path]::DirectorySeparatorChar
+if (-not $resolvedResultsDirectory.StartsWith($allowedPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "ResultsDirectory must be a child of '$allowedResultsRoot'."
+}
+
+if (Test-Path -LiteralPath $resolvedResultsDirectory -PathType Container) {
+    Remove-Item -LiteralPath $resolvedResultsDirectory -Recurse -Force
+}
+
+New-Item -ItemType Directory -Force -Path $resolvedResultsDirectory | Out-Null
 
 # 1. Restore
 Write-Host "[1/4] dotnet restore..." -ForegroundColor Yellow
-dotnet restore $solution
+dotnet restore $solution --locked-mode
 if ($LASTEXITCODE -ne 0) { throw "Restore failed" }
 
 # 2. Build
 Write-Host "[2/4] dotnet build..." -ForegroundColor Yellow
-dotnet build $solution --no-restore
+dotnet build $solution --configuration $Configuration --no-restore -p:ContinuousIntegrationBuild=true
 if ($LASTEXITCODE -ne 0) { throw "Build failed" }
 
 # 3. Test
 Write-Host "[3/4] dotnet test..." -ForegroundColor Yellow
-dotnet test $solution --no-build
+dotnet test $solution `
+    --configuration $Configuration `
+    --no-build `
+    --logger "trx" `
+    --results-directory $resolvedResultsDirectory `
+    --collect "XPlat Code Coverage"
 if ($LASTEXITCODE -ne 0) { throw "Tests failed" }
+
+$trxFiles = @(Get-ChildItem -LiteralPath $resolvedResultsDirectory -Filter "*.trx" -File -Recurse)
+if ($trxFiles.Count -eq 0) { throw "Tests passed but no TRX results were generated" }
+
+$coverageFiles = @(
+    Get-ChildItem -LiteralPath $resolvedResultsDirectory -Directory |
+        ForEach-Object {
+            Get-ChildItem -LiteralPath $_.FullName -Filter "coverage.cobertura.xml" -File
+        }
+)
+if ($coverageFiles.Count -eq 0) { throw "Tests passed but no coverage results were generated" }
+
+Write-Host "      TRX files: $($trxFiles.Count)" -ForegroundColor DarkGray
+Write-Host "      Coverage files: $($coverageFiles.Count)" -ForegroundColor DarkGray
 
 # 4. Format check
 if (-not $SkipFormat) {

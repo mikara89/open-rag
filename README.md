@@ -23,6 +23,8 @@ The platform accepts files, stores originals through `IFileStorage`, preprocesse
 | [MVP local run](docs/11-mvp-local-run.md) | Local run, smoke test, and MVP acceptance checklist |
 | [Production-readiness roadmap](docs/12-production-readiness-roadmap.md) | Remaining gaps before production use |
 | [Documentation review checklist](docs/13-documentation-review-checklist.md) | PR guidance for deciding which docs must change |
+| [GitHub governance](docs/14-github-governance.md) | Recommended branch protection and emergency procedures |
+| [Security policy](SECURITY.md) | Supported status, vulnerability reporting, and known security limitations |
 | [ADR 0001](docs/adr/0001-use-clean-onion-with-vertical-slices.md) | Architecture style |
 | [ADR 0002](docs/adr/0002-use-aspire-for-local-development.md) | Aspire local development |
 | [ADR 0003](docs/adr/0003-use-cap-with-postgresql-storage.md) | CAP with PostgreSQL storage |
@@ -72,10 +74,10 @@ The `MigrateEmbeddingVectorToPgvector` EF migration changes the embedding column
 ## Quick validation
 
 ```bash
-# Same build, test, format, and documentation checks as GitHub CI
+# Same Release build, test/coverage, format, and documentation checks as GitHub CI
 ./scripts/ci-local.ps1
 
-# Build, test, and format only
+# Restore, Release build/test, TRX, coverage, and format checks
 ./scripts/verify.ps1
 
 # Documentation only
@@ -85,4 +87,4 @@ The `MigrateEmbeddingVectorToPgvector` EF migration changes the embedding column
 ./scripts/mvp-smoke-test.ps1
 ```
 
-GitHub Actions runs the dependency-free checks for pull requests to `main` and pushes to `main`. The live MVP smoke test is deliberately manual until CI has disposable service infrastructure.
+GitHub Actions runs the dependency-free checks for pull requests to `main` and pushes to `main`, then retains TRX test results and Cobertura coverage as separate artifacts. The live MVP smoke test is deliberately manual until CI has disposable service infrastructure.

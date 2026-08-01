@@ -1,0 +1,85 @@
+name: Bug report
+description: Report reproducible incorrect behavior in OpenRAG.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve OpenRAG. Remove secrets, tokens, customer documents, and sensitive log content before submitting.
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, .NET SDK, container runtime, database version, and how OpenRAG was started.
+      placeholder: Windows 11; .NET SDK 10.0.110; Docker Desktop; Aspire AppHost
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      description: Provide the commit SHA, branch, tag, or release version where the problem occurs.
+      placeholder: abc1234 or main at 2026-08-01
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Give the smallest repeatable sequence, including relevant requests or commands.
+      placeholder: |
+        1. Start ...
+        2. Send ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: providers
+    attributes:
+      label: Provider configuration names
+      description: List provider names and models only. Never include API keys, tokens, connection strings, or other credentials.
+      placeholder: Preprocessing=Mock; Chunking=DoclingJson; Embeddings=Mock; Chat=Mock; Storage=Local
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or diagnostics
+      description: Include useful errors or correlation IDs after removing secrets, tokens, customer documents, and sensitive data.
+      render: shell
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation commands run
+      description: List commands and outcomes, such as scripts/ci-local.ps1 or the MVP smoke test.
+      placeholder: ./scripts/ci-local.ps1 — passed
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: sensitive_data
+    attributes:
+      label: Sensitive-data confirmation
+      options:
+        - label: I removed secrets, tokens, customer documents, and sensitive log content.
+          required: true

@@ -6,6 +6,43 @@ The API-first MVP supports document upload, asynchronous preprocessing, chunking
 
 This is a production-oriented development baseline, not a production deployment. No UI or deployment topology is included in the MVP.
 
+## P0 — Trust boundary and repository controls
+
+### P0.1 — Trusted CI and PR governance
+
+- **Objective:** Prove dependency-free GitHub CI on a pull request and establish the repository files and documented controls needed for PR-based development.
+- **Acceptance criteria:** A feature-branch PR runs green `Build, test, and format` and `Documentation checks` jobs; test-result and coverage artifacts are downloadable; CODEOWNERS, issue forms, the PR template, security policy, and governance guidance are present; recommended `main` protection is enabled and verified after explicit maintainer authorization.
+- **Dependencies:** Existing build/test/format scripts and GitHub Actions access. Repository-setting changes require separate maintainer approval.
+- **Status:** In progress
+
+### P0.2 — Authentication foundation
+
+- **Objective:** Establish a supported authentication mechanism and trusted principal model for API requests.
+- **Acceptance criteria:** Authentication is required on protected endpoints; invalid or missing credentials are rejected; identity configuration and key rotation are documented and tested.
+- **Dependencies:** P0.1 trusted CI and an approved identity-provider design.
+- **Status:** Planned
+
+### P0.3 — Trusted tenant resolution
+
+- **Objective:** Resolve tenant identity only from authenticated, trusted claims or server-side mappings.
+- **Acceptance criteria:** Request-supplied tenant identifiers cannot override the authenticated tenant; background events preserve trusted tenant context; negative tests cover spoofing attempts.
+- **Dependencies:** P0.2 authentication foundation.
+- **Status:** Planned
+
+### P0.4 — Authorization and retrieval isolation
+
+- **Objective:** Enforce authorization and tenant isolation across document lifecycle, storage, processing, vector retrieval, and RAG responses.
+- **Acceptance criteria:** Every protected operation applies policy and tenant filters; storage and vector queries cannot cross tenants; denial behavior is consistent and audited.
+- **Dependencies:** P0.2 authentication foundation and P0.3 trusted tenant resolution.
+- **Status:** Planned
+
+### P0.5 — Cross-tenant security integration tests
+
+- **Objective:** Prove that one tenant cannot read, mutate, retrieve, reprocess, or delete another tenant's data.
+- **Acceptance criteria:** Automated integration tests exercise API, persistence, vector retrieval, background processing, and storage boundaries with positive and negative tenant cases.
+- **Dependencies:** P0.2 through P0.4 plus disposable integration-test infrastructure.
+- **Status:** Planned
+
 ## Priority gaps
 
 ### Runtime and deployment
@@ -31,7 +68,7 @@ This is a production-oriented development baseline, not a production deployment.
 
 ### CI quality and security
 
-- Publish test results and code coverage, then set an agreed coverage policy for critical application paths.
+- Surface coverage summaries in PR review and set an agreed coverage policy for critical application paths; raw Cobertura output is already retained as a CI artifact.
 - Add static application security testing and secret scanning.
 - Add dependency vulnerability scanning and an update policy; fail CI according to an agreed severity threshold.
 - Add container and deployment-manifest scanning once deployable artifacts exist.
@@ -39,7 +76,7 @@ This is a production-oriented development baseline, not a production deployment.
 
 ## Suggested delivery order
 
-1. Resolve known dependency advisories and establish coverage/security reporting.
+1. Resolve known dependency advisories and establish a coverage policy plus security scanning.
 2. Add authentication, authorization, and tenant-isolation hardening.
 3. Add S3-compatible storage plus tested backup/restore procedures.
 4. Create disposable integration infrastructure and a live smoke-test CI job.
