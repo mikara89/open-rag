@@ -33,6 +33,10 @@ public interface IAuthenticatedApplicationMessage
 {
 }
 
+public interface IResultApplicationMessage
+{
+}
+
 public interface IExplicitTenantMessage
 {
     Guid TenantId { get; }

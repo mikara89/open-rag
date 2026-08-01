@@ -19,7 +19,7 @@ public sealed class GetDocumentStatusHandlerTests
         var handler = CreateHandler(fakes);
         var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
-        var response = await handler.Handle(query);
+        var response = (await handler.Handle(query)).Value;
 
         Assert.Equal(fakes.Document.Id, response.DocumentId);
         Assert.Equal("Uploaded", response.Status);
@@ -33,7 +33,7 @@ public sealed class GetDocumentStatusHandlerTests
         var handler = CreateHandler(fakes);
         var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
-        var response = await handler.Handle(query);
+        var response = (await handler.Handle(query)).Value;
 
         Assert.NotEmpty(response.Versions);
         Assert.Equal(fakes.Version.Id, response.Versions[0].VersionId);
@@ -46,7 +46,7 @@ public sealed class GetDocumentStatusHandlerTests
         var handler = CreateHandler(fakes);
         var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
-        var response = await handler.Handle(query);
+        var response = (await handler.Handle(query)).Value;
 
         Assert.Equal(5, response.Versions[0].ChunkCount);
     }
@@ -58,7 +58,7 @@ public sealed class GetDocumentStatusHandlerTests
         var handler = CreateHandler(fakes);
         var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
-        var response = await handler.Handle(query);
+        var response = (await handler.Handle(query)).Value;
 
         Assert.Equal(3, response.Versions[0].EmbeddingCount);
     }
@@ -70,7 +70,7 @@ public sealed class GetDocumentStatusHandlerTests
         var handler = CreateHandler(fakes);
         var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
-        var response = await handler.Handle(query);
+        var response = (await handler.Handle(query)).Value;
 
         Assert.Equal("mock", response.Versions[0].EmbeddingProvider);
         Assert.Equal("mock-8", response.Versions[0].EmbeddingModel);
@@ -84,7 +84,7 @@ public sealed class GetDocumentStatusHandlerTests
         var handler = CreateHandler(fakes);
         var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
-        var response = await handler.Handle(query);
+        var response = (await handler.Handle(query)).Value;
 
         Assert.Equal("Uploaded", response.Versions[0].Status);
     }
@@ -96,7 +96,7 @@ public sealed class GetDocumentStatusHandlerTests
         var handler = CreateHandler(fakes);
         var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
-        var response = await handler.Handle(query);
+        var response = (await handler.Handle(query)).Value;
 
         Assert.Equal("Preprocessed", response.Versions[0].Status);
     }
@@ -108,7 +108,7 @@ public sealed class GetDocumentStatusHandlerTests
         var handler = CreateHandler(fakes);
         var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
-        var response = await handler.Handle(query);
+        var response = (await handler.Handle(query)).Value;
 
         Assert.Equal("Chunked", response.Versions[0].Status);
     }
@@ -120,7 +120,7 @@ public sealed class GetDocumentStatusHandlerTests
         var handler = CreateHandler(fakes);
         var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
-        var response = await handler.Handle(query);
+        var response = (await handler.Handle(query)).Value;
 
         Assert.Equal("Ready", response.Versions[0].Status);
     }
@@ -132,7 +132,7 @@ public sealed class GetDocumentStatusHandlerTests
         var handler = CreateHandler(fakes);
         var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
-        var response = await handler.Handle(query);
+        var response = (await handler.Handle(query)).Value;
 
         Assert.NotEmpty(response.Versions[0].Steps);
         Assert.Contains(response.Versions[0].Steps, s => s.Name == "Preprocess");
@@ -141,15 +141,15 @@ public sealed class GetDocumentStatusHandlerTests
     }
 
     [Fact]
-    public async Task Throws_not_found_for_missing_document()
+    public async Task Returns_not_found_for_missing_document()
     {
         var fakes = CreateFakes(noDocument: true);
         var handler = CreateHandler(fakes);
 
         var query = new GetDocumentStatusQuery(Guid.NewGuid());
 
-        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() => handler.Handle(query).AsTask());
-        Assert.Contains("not found", ex.Message);
+        var result = await handler.Handle(query);
+        Assert.Equal("resource.not_found", result.PrimaryError.Code);
     }
 
     [Fact]
@@ -160,8 +160,8 @@ public sealed class GetDocumentStatusHandlerTests
 
         var query = new GetDocumentStatusQuery(Guid.Empty);
 
-        var ex = await Assert.ThrowsAsync<RequestValidationException>(() => handler.Handle(query).AsTask());
-        Assert.Contains("DocumentId", ex.Message);
+        var result = await handler.Handle(query);
+        Assert.Equal("request.document_id_required", result.PrimaryError.Code);
     }
 
     // ── Processing history tests ───────────────────────────────────
@@ -177,7 +177,7 @@ public sealed class GetDocumentStatusHandlerTests
         var fakes = CreateFakes(runs: new[] { run }, documentId: documentId, versionId: versionId);
         var handler = CreateHandler(fakes);
 
-        var response = await handler.Handle(new GetDocumentStatusQuery(fakes.Document.Id));
+        var response = (await handler.Handle(new GetDocumentStatusQuery(fakes.Document.Id))).Value;
 
         Assert.NotEmpty(response.ProcessingRuns);
         Assert.Equal(run.Id, response.ProcessingRuns[0].RunId);
@@ -207,7 +207,7 @@ public sealed class GetDocumentStatusHandlerTests
             versionId: versionId);
         var handler = CreateHandler(fakes);
 
-        var response = await handler.Handle(new GetDocumentStatusQuery(fakes.Document.Id));
+        var response = (await handler.Handle(new GetDocumentStatusQuery(fakes.Document.Id))).Value;
 
         Assert.NotEmpty(response.ProcessingRuns);
         var runDto = response.ProcessingRuns[0];
@@ -221,7 +221,7 @@ public sealed class GetDocumentStatusHandlerTests
         var fakes = CreateFakes();
         var handler = CreateHandler(fakes);
 
-        var response = await handler.Handle(new GetDocumentStatusQuery(fakes.Document.Id));
+        var response = (await handler.Handle(new GetDocumentStatusQuery(fakes.Document.Id))).Value;
 
         Assert.Empty(response.ProcessingRuns);
     }

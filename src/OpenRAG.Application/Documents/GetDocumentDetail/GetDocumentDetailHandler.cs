@@ -2,11 +2,13 @@ using Mediator;
 using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Common;
+using OpenRAG.Application.Common.Results;
 using OpenRAG.Domain.Documents;
 
 namespace OpenRAG.Application.Documents.GetDocumentDetail;
 
-public sealed class GetDocumentDetailHandler : IRequestHandler<GetDocumentDetailQuery, GetDocumentDetailResponse>
+public sealed class GetDocumentDetailHandler
+    : IRequestHandler<GetDocumentDetailQuery, Result<GetDocumentDetailResponse>>
 {
     private readonly IDocumentRepository _documentRepository;
     private readonly IDocumentChunkRepository _chunkRepository;
@@ -28,12 +30,18 @@ public sealed class GetDocumentDetailHandler : IRequestHandler<GetDocumentDetail
         _currentTenant = currentTenant;
     }
 
-    public async ValueTask<GetDocumentDetailResponse> Handle(
+    public async ValueTask<Result<GetDocumentDetailResponse>> Handle(
         GetDocumentDetailQuery query,
         CancellationToken cancellationToken = default)
     {
         if (query.DocumentId == Guid.Empty)
-            throw new RequestValidationException("DocumentId cannot be empty.");
+        {
+            return Result<GetDocumentDetailResponse>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    "request.document_id_required",
+                    "DocumentId cannot be empty.",
+                    "documentId"));
+        }
 
         var tenantId = _currentTenant.TenantId;
 
@@ -41,7 +49,7 @@ public sealed class GetDocumentDetailHandler : IRequestHandler<GetDocumentDetail
             tenantId, query.DocumentId, cancellationToken);
 
         if (document is null)
-            throw new ResourceNotFoundException();
+            return Result<GetDocumentDetailResponse>.Failure(ApplicationErrors.ResourceNotFound());
 
         IsolationGuard.Equal(document.TenantId, tenantId, nameof(document.TenantId));
         IsolationGuard.Equal(document.Id, query.DocumentId, nameof(document.Id));
@@ -99,13 +107,13 @@ public sealed class GetDocumentDetailHandler : IRequestHandler<GetDocumentDetail
             }
         }
 
-        return new GetDocumentDetailResponse(
+        return Result<GetDocumentDetailResponse>.Success(new GetDocumentDetailResponse(
             DocumentId: document.Id,
             FileName: document.OriginalFileName,
             Status: document.Status.ToString(),
             CreatedAt: document.CreatedAt,
             UpdatedAt: document.UpdatedAt,
             LatestVersion: latestVersion,
-            Intelligence: intelligence);
+            Intelligence: intelligence));
     }
 }

@@ -1,3 +1,4 @@
+using OpenRAG.Application.Common.Results;
 using OpenRAG.Application.Pipeline;
 
 namespace OpenRAG.Application.Documents.ListDocuments;
@@ -7,7 +8,9 @@ public sealed record ListDocumentsQuery(
     int PageSize = 20,
     string? Status = null,
     string? Search = null
-) : IOpenRagQuery<ListDocumentsResponse>, IAuthenticatedApplicationMessage;
+) : IOpenRagQuery<Result<ListDocumentsResponse>>,
+    IAuthenticatedApplicationMessage,
+    IResultApplicationMessage;
 
 public sealed record ListDocumentsResponse(
     IReadOnlyList<ListDocumentsItem> Items,

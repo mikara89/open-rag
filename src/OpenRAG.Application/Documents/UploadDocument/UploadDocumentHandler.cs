@@ -6,16 +6,16 @@ using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Storage;
 using OpenRAG.Application.Abstractions.Time;
 using OpenRAG.Application.Common;
+using OpenRAG.Application.Common.Results;
 using OpenRAG.Application.Messaging.Events;
 using OpenRAG.Domain.Documents;
 using OpenRAG.Domain.Processing;
 
 namespace OpenRAG.Application.Documents.UploadDocument;
 
-public sealed class UploadDocumentHandler : IRequestHandler<UploadDocumentCommand, UploadDocumentResponse>
+public sealed class UploadDocumentHandler
+    : IRequestHandler<UploadDocumentCommand, Result<UploadDocumentResponse>>
 {
-    private const long MaxFileSizeBytes = 100 * 1024 * 1024; // 100 MB
-
     private readonly IFileStorage _fileStorage;
     private readonly IDocumentObjectKeyPolicy _objectKeyPolicy;
     private readonly IDocumentRepository _documentRepository;
@@ -48,11 +48,13 @@ public sealed class UploadDocumentHandler : IRequestHandler<UploadDocumentComman
         _unitOfWork = unitOfWork;
     }
 
-    public async ValueTask<UploadDocumentResponse> Handle(
+    public async ValueTask<Result<UploadDocumentResponse>> Handle(
         UploadDocumentCommand command,
         CancellationToken cancellationToken = default)
     {
-        Validate(command);
+        var validationError = Validate(command);
+        if (validationError is not null)
+            return Result<UploadDocumentResponse>.Failure(validationError);
 
         var tenantId = _currentTenant.TenantId;
         var userId = _currentUser.UserId;
@@ -171,37 +173,47 @@ public sealed class UploadDocumentHandler : IRequestHandler<UploadDocumentComman
         // 12. Commit transaction — document metadata and CAP outbox message are now durable
         await transaction.CommitAsync(cancellationToken);
 
-        return new UploadDocumentResponse(
+        return Result<UploadDocumentResponse>.Success(new UploadDocumentResponse(
             DocumentId: documentId,
             VersionId: versionId,
-            Status: document.Status.ToString());
+            Status: document.Status.ToString()));
     }
 
-    private static void Validate(UploadDocumentCommand command)
+    private static ApplicationError? Validate(UploadDocumentCommand command)
     {
         if (string.IsNullOrWhiteSpace(command.FileName))
         {
-            throw new RequestValidationException("File name cannot be empty.");
+            return ApplicationErrors.InvalidRequest(
+                "request.file_name_required", "File name cannot be empty.", "fileName");
         }
 
         if (string.IsNullOrWhiteSpace(command.ContentType))
         {
-            throw new RequestValidationException("Content type cannot be empty.");
+            return ApplicationErrors.InvalidRequest(
+                "request.content_type_required", "Content type cannot be empty.", "contentType");
         }
 
-        if (command.SizeBytes <= 0)
+        if (command.SizeBytes <= 0 || command.SizeBytes > 100L * 1024 * 1024)
         {
-            throw new RequestValidationException("File size must be greater than zero.");
-        }
-
-        if (command.SizeBytes > MaxFileSizeBytes)
-        {
-            throw new RequestValidationException($"File size exceeds maximum allowed size of {MaxFileSizeBytes / (1024 * 1024)} MB.");
+            var message = command.SizeBytes <= 0
+                ? "File size must be greater than zero."
+                : "File size exceeds the maximum allowed size of 100 MB.";
+            return ApplicationErrors.InvalidRequest(
+                "request.file_size_invalid", message, "sizeBytes");
         }
 
         if (command.Content is null)
         {
-            throw new RequestValidationException("Content stream cannot be null.");
+            return ApplicationErrors.InvalidRequest(
+                "request.content_required", "Content stream cannot be null.", "content");
         }
+
+        if (string.IsNullOrWhiteSpace(command.CorrelationId))
+        {
+            return ApplicationErrors.InvalidRequest(
+                "request.correlation_id_required", "CorrelationId cannot be empty.", "correlationId");
+        }
+
+        return null;
     }
 }

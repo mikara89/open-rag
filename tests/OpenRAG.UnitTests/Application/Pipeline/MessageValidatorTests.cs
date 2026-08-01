@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using OpenRAG.Application;
-using OpenRAG.Application.Common;
+using OpenRAG.Application.Common.Results;
 using OpenRAG.Application.Documents.DeleteDocument;
 using OpenRAG.Application.Documents.GetDocumentChunk;
 using OpenRAG.Application.Documents.GetDocumentDetail;
@@ -88,7 +88,7 @@ public sealed class MessageValidatorTests
         var id = Guid.NewGuid();
         var validators = scope.ServiceProvider
             .GetServices<IMessageValidator<AskQuestionQuery>>();
-        var behavior = new ValidationBehavior<AskQuestionQuery, string>(validators);
+        var behavior = new ResultValidationBehavior<AskQuestionQuery, Result<string>>(validators);
         var handlerCalls = 0;
 
         await behavior.Handle(
@@ -96,7 +96,7 @@ public sealed class MessageValidatorTests
             (_, _) =>
             {
                 handlerCalls++;
-                return ValueTask.FromResult("handled");
+                return ValueTask.FromResult(Result<string>.Success("handled"));
             },
             CancellationToken.None);
 
@@ -112,7 +112,7 @@ public sealed class MessageValidatorTests
         var scoped = scope.ServiceProvider;
         const long maximumUploadSizeBytes = 100L * 1024 * 1024;
         var validators = scoped.GetServices<IMessageValidator<UploadDocumentCommand>>();
-        var behavior = new ValidationBehavior<UploadDocumentCommand, string>(validators);
+        var behavior = new ResultValidationBehavior<UploadDocumentCommand, Result<string>>(validators);
         var handlerCalls = 0;
 
         await behavior.Handle(
@@ -125,7 +125,7 @@ public sealed class MessageValidatorTests
             (_, _) =>
             {
                 handlerCalls++;
-                return ValueTask.FromResult("handled");
+                return ValueTask.FromResult(Result<string>.Success("handled"));
             },
             CancellationToken.None);
 
@@ -157,21 +157,14 @@ public sealed class MessageValidatorTests
         string expectedMessage)
         where TMessage : IOpenRagMessage
     {
-        var behavior = new ValidationBehavior<TMessage, string>(
-            serviceProvider.GetServices<IMessageValidator<TMessage>>());
-        var handlerCalls = 0;
+        var errors = new List<ApplicationError>();
+        foreach (var validator in serviceProvider.GetServices<IMessageValidator<TMessage>>())
+        {
+            errors.AddRange(await validator.ValidateAsync(message, CancellationToken.None));
+        }
 
-        var exception = await Assert.ThrowsAsync<RequestValidationException>(
-            () => behavior.Handle(
-                message,
-                (_, _) =>
-                {
-                    handlerCalls++;
-                    return ValueTask.FromResult("handled");
-                },
-                CancellationToken.None).AsTask());
-
-        Assert.Contains(expectedMessage, exception.Message, StringComparison.Ordinal);
-        Assert.Equal(0, handlerCalls);
+        Assert.Contains(
+            errors,
+            error => error.Message.Contains(expectedMessage, StringComparison.Ordinal));
     }
 }

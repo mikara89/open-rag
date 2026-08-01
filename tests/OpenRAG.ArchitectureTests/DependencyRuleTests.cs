@@ -5,6 +5,7 @@ using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Storage;
 using OpenRAG.Application.Abstractions.Vector;
+using OpenRAG.Application.Common.Results;
 using OpenRAG.Application.Pipeline;
 using OpenRAG.Application.Pipeline.Behaviors;
 using OpenRAG.Application.Processing.ChunkDocument;
@@ -155,7 +156,7 @@ public class DependencyRuleTests
                 && contract.GetGenericTypeDefinition() == typeof(IPipelineBehavior<,>)))
             .ToArray();
 
-        Assert.Equal(5, behaviorTypes.Length);
+        Assert.Equal(6, behaviorTypes.Length);
         Assert.All(behaviorTypes, behaviorType =>
         {
             Assert.StartsWith("OpenRAG.Application.Pipeline", behaviorType.Namespace, StringComparison.Ordinal);
@@ -171,6 +172,98 @@ public class DependencyRuleTests
                 parameter => parameter.ParameterType.Namespace == "OpenRAG.Application.Abstractions.Persistence");
         });
     }
+
+    [Fact]
+    public void Every_authenticated_application_message_is_explicitly_result_based()
+    {
+        var messages = ApplicationAssembly.GetTypes()
+            .Where(type => type.IsClass && !type.IsAbstract)
+            .Where(type => typeof(IAuthenticatedApplicationMessage).IsAssignableFrom(type))
+            .ToArray();
+
+        Assert.Equal(12, messages.Length);
+        Assert.All(messages, message =>
+        {
+            Assert.True(typeof(IResultApplicationMessage).IsAssignableFrom(message));
+            var responseType = GetMediatorResponseType(message);
+            Assert.True(responseType.IsGenericType);
+            Assert.Equal(typeof(Result<>), responseType.GetGenericTypeDefinition());
+        });
+    }
+
+    [Fact]
+    public void Worker_processing_messages_are_neither_marked_nor_returned_as_results()
+    {
+        Type[] commands =
+        [
+            typeof(PreprocessDocumentCommand),
+            typeof(ChunkDocumentCommand),
+            typeof(GenerateIntelligenceCommand),
+            typeof(GenerateEmbeddingsCommand)
+        ];
+
+        Assert.All(commands, command =>
+        {
+            Assert.False(typeof(IResultApplicationMessage).IsAssignableFrom(command));
+            var responseType = GetMediatorResponseType(command);
+            Assert.False(
+                responseType.IsGenericType
+                && responseType.GetGenericTypeDefinition() == typeof(Result<>));
+        });
+    }
+
+    [Fact]
+    public void Application_result_model_contains_no_http_concepts_or_aspnet_dependencies()
+    {
+        var resultTypes = ApplicationAssembly.GetTypes()
+            .Where(type => type.Namespace == "OpenRAG.Application.Common.Results")
+            .ToArray();
+
+        Assert.NotEmpty(resultTypes);
+        Assert.All(
+            resultTypes,
+            type => Assert.DoesNotContain(
+                type.GetProperties(),
+                property => property.Name.Contains("StatusCode", StringComparison.Ordinal)
+                    || property.PropertyType.Namespace?.StartsWith(
+                        "Microsoft.AspNetCore",
+                        StringComparison.Ordinal) == true));
+        Assert.Null(typeof(ApplicationError).GetProperty("StatusCode"));
+    }
+
+    [Fact]
+    public void Result_to_http_mapping_exists_only_in_api()
+    {
+        var assemblies = new[] { DomainAssembly, ApplicationAssembly, InfrastructureAssembly, ApiAssembly, WorkerAssembly };
+        var mappingMethods = assemblies
+            .SelectMany(assembly => assembly.GetTypes())
+            .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Static))
+            .Where(method => method.Name == "ToHttpResult")
+            .ToArray();
+
+        var mapping = Assert.Single(mappingMethods);
+        Assert.Equal(ApiAssembly, mapping.DeclaringType!.Assembly);
+    }
+
+    [Fact]
+    public void Validation_behaviors_do_not_catch_arbitrary_exceptions()
+    {
+        Type[] behaviors = [typeof(ResultValidationBehavior<,>), typeof(WorkerValidationBehavior<,>)];
+
+        Assert.All(behaviors, behavior =>
+        {
+            var handle = behavior.GetMethod("Handle")!;
+            Assert.DoesNotContain(
+                handle.GetMethodBody()!.ExceptionHandlingClauses,
+                clause => clause.CatchType == typeof(Exception));
+        });
+    }
+
+    private static Type GetMediatorResponseType(Type messageType) =>
+        messageType.GetInterfaces()
+            .Single(contract => contract.IsGenericType
+                && contract.GetGenericTypeDefinition() == typeof(IRequest<>))
+            .GetGenericArguments()[0];
 
     [Fact]
     public void Worker_tenant_behavior_has_no_ambient_tenant_or_http_dependency()

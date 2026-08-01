@@ -4,11 +4,12 @@ using OpenRAG.Application.Abstractions.AI;
 using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Common;
+using OpenRAG.Application.Common.Results;
 
 namespace OpenRAG.Application.Documents.GetDocumentIntelligence;
 
 public sealed class GetDocumentIntelligenceHandler
-    : IRequestHandler<GetDocumentIntelligenceQuery, DocumentIntelligenceResponse>
+    : IRequestHandler<GetDocumentIntelligenceQuery, Result<DocumentIntelligenceResponse>>
 {
     private readonly IDocumentRepository _documentRepository;
     private readonly IDocumentIntelligenceRepository _intelligenceRepository;
@@ -24,15 +25,19 @@ public sealed class GetDocumentIntelligenceHandler
         _currentTenant = currentTenant;
     }
 
-    public async ValueTask<DocumentIntelligenceResponse> Handle(
+    public async ValueTask<Result<DocumentIntelligenceResponse>> Handle(
         GetDocumentIntelligenceQuery query,
         CancellationToken cancellationToken = default)
     {
-        if (query.DocumentId == Guid.Empty)
-            throw new RequestValidationException("DocumentId cannot be empty.");
-
-        if (query.VersionId == Guid.Empty)
-            throw new RequestValidationException("VersionId cannot be empty.");
+        if (query.DocumentId == Guid.Empty || query.VersionId == Guid.Empty)
+        {
+            var error = query.DocumentId == Guid.Empty
+                ? ApplicationErrors.InvalidRequest(
+                    "request.document_id_required", "DocumentId cannot be empty.", "documentId")
+                : ApplicationErrors.InvalidRequest(
+                    "request.version_id_required", "VersionId cannot be empty.", "versionId");
+            return Result<DocumentIntelligenceResponse>.Failure(error);
+        }
 
         var tenantId = _currentTenant.TenantId;
 
@@ -41,14 +46,14 @@ public sealed class GetDocumentIntelligenceHandler
             tenantId, query.DocumentId, cancellationToken);
 
         if (document is null)
-            throw new ResourceNotFoundException();
+            return Result<DocumentIntelligenceResponse>.Failure(ApplicationErrors.ResourceNotFound());
 
         IsolationGuard.Equal(document.TenantId, tenantId, nameof(document.TenantId));
         IsolationGuard.Equal(document.Id, query.DocumentId, nameof(document.Id));
 
         var version = document.Versions.FirstOrDefault(item => item.Id == query.VersionId);
         if (version is null)
-            throw new ResourceNotFoundException();
+            return Result<DocumentIntelligenceResponse>.Failure(ApplicationErrors.ResourceNotFound());
 
         IsolationGuard.Equal(version.TenantId, tenantId, nameof(version.TenantId));
         IsolationGuard.Equal(version.DocumentId, query.DocumentId, nameof(version.DocumentId));
@@ -58,13 +63,13 @@ public sealed class GetDocumentIntelligenceHandler
             tenantId, query.DocumentId, query.VersionId, cancellationToken);
 
         if (intel is null)
-            throw new ResourceNotFoundException();
+            return Result<DocumentIntelligenceResponse>.Failure(ApplicationErrors.ResourceNotFound());
 
         IsolationGuard.Equal(intel.TenantId, tenantId, nameof(intel.TenantId));
         IsolationGuard.Equal(intel.DocumentId, query.DocumentId, nameof(intel.DocumentId));
         IsolationGuard.Equal(intel.VersionId, query.VersionId, nameof(intel.VersionId));
 
-        return new DocumentIntelligenceResponse(
+        return Result<DocumentIntelligenceResponse>.Success(new DocumentIntelligenceResponse(
             Classification: intel.Classification,
             Summary: intel.Summary,
             Keywords: DeserializeList(intel.KeywordsJson),
@@ -73,7 +78,7 @@ public sealed class GetDocumentIntelligenceHandler
             Provider: intel.Provider,
             Model: intel.Model,
             CreatedAt: intel.CreatedAt,
-            UpdatedAt: intel.UpdatedAt);
+            UpdatedAt: intel.UpdatedAt));
     }
 
     private static IReadOnlyList<string> DeserializeList(string? json)

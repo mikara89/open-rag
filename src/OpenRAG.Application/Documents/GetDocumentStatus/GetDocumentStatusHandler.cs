@@ -2,12 +2,14 @@ using Mediator;
 using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Common;
+using OpenRAG.Application.Common.Results;
 using OpenRAG.Domain.Documents;
 using OpenRAG.Domain.Processing;
 
 namespace OpenRAG.Application.Documents.GetDocumentStatus;
 
-public sealed class GetDocumentStatusHandler : IRequestHandler<GetDocumentStatusQuery, GetDocumentStatusResponse>
+public sealed class GetDocumentStatusHandler
+    : IRequestHandler<GetDocumentStatusQuery, Result<GetDocumentStatusResponse>>
 {
     private readonly IDocumentRepository _documentRepository;
     private readonly IDocumentChunkRepository _chunkRepository;
@@ -29,13 +31,17 @@ public sealed class GetDocumentStatusHandler : IRequestHandler<GetDocumentStatus
         _currentTenant = currentTenant;
     }
 
-    public async ValueTask<GetDocumentStatusResponse> Handle(
+    public async ValueTask<Result<GetDocumentStatusResponse>> Handle(
         GetDocumentStatusQuery query,
         CancellationToken cancellationToken = default)
     {
         if (query.DocumentId == Guid.Empty)
         {
-            throw new RequestValidationException("DocumentId cannot be empty.");
+            return Result<GetDocumentStatusResponse>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    "request.document_id_required",
+                    "DocumentId cannot be empty.",
+                    "documentId"));
         }
 
         var tenantId = _currentTenant.TenantId;
@@ -44,9 +50,7 @@ public sealed class GetDocumentStatusHandler : IRequestHandler<GetDocumentStatus
             tenantId, query.DocumentId, cancellationToken);
 
         if (document is null)
-        {
-            throw new ResourceNotFoundException();
-        }
+            return Result<GetDocumentStatusResponse>.Failure(ApplicationErrors.ResourceNotFound());
 
         IsolationGuard.Equal(document.TenantId, tenantId, nameof(document.TenantId));
         IsolationGuard.Equal(document.Id, query.DocumentId, nameof(document.Id));
@@ -147,7 +151,7 @@ public sealed class GetDocumentStatusHandler : IRequestHandler<GetDocumentStatus
             ? versions[^1].Status
             : document.Status.ToString();
 
-        return new GetDocumentStatusResponse(
+        return Result<GetDocumentStatusResponse>.Success(new GetDocumentStatusResponse(
             DocumentId: document.Id,
             Status: docStatus,
             CurrentVersionId: document.CurrentVersionId,
@@ -155,7 +159,7 @@ public sealed class GetDocumentStatusHandler : IRequestHandler<GetDocumentStatus
             CreatedAt: document.CreatedAt,
             UpdatedAt: document.UpdatedAt,
             Versions: versions,
-            ProcessingRuns: allRuns);
+            ProcessingRuns: allRuns));
     }
 
     private static string DeriveVersionStatus(

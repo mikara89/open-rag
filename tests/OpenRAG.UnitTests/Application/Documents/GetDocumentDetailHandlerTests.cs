@@ -19,10 +19,10 @@ public sealed class GetDocumentDetailHandlerTests
         var fakes = new Fakes(null);
         var handler = new GetDocumentDetailHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.IntelligenceRepo, fakes.Tenant);
 
-        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
-            handler.Handle(new GetDocumentDetailQuery(DocId)).AsTask());
+        var result = await handler.Handle(new GetDocumentDetailQuery(DocId));
 
-        Assert.Contains("not found", ex.Message);
+        Assert.True(result.IsFailure);
+        Assert.Equal("resource.not_found", result.PrimaryError.Code);
     }
 
     [Fact]
@@ -32,7 +32,7 @@ public sealed class GetDocumentDetailHandlerTests
         var fakes = new Fakes(doc);
         var handler = new GetDocumentDetailHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.IntelligenceRepo, fakes.Tenant);
 
-        var response = await handler.Handle(new GetDocumentDetailQuery(DocId));
+        var response = (await handler.Handle(new GetDocumentDetailQuery(DocId))).Value;
 
         Assert.Equal(DocId, response.DocumentId);
         Assert.Equal("test.md", response.FileName);
@@ -47,7 +47,7 @@ public sealed class GetDocumentDetailHandlerTests
         var fakes = new Fakes(doc);
         var handler = new GetDocumentDetailHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.IntelligenceRepo, fakes.Tenant);
 
-        var response = await handler.Handle(new GetDocumentDetailQuery(DocId));
+        var response = (await handler.Handle(new GetDocumentDetailQuery(DocId))).Value;
 
         Assert.NotNull(response.LatestVersion);
         Assert.True(response.LatestVersion!.HasSourceFile);
@@ -62,7 +62,7 @@ public sealed class GetDocumentDetailHandlerTests
         var fakes = new Fakes(doc);
         var handler = new GetDocumentDetailHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.IntelligenceRepo, fakes.Tenant);
 
-        var response = await handler.Handle(new GetDocumentDetailQuery(DocId));
+        var response = (await handler.Handle(new GetDocumentDetailQuery(DocId))).Value;
 
         Assert.NotNull(response.LatestVersion);
         Assert.Equal(5, response.LatestVersion!.ChunkCount);

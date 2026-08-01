@@ -1,11 +1,12 @@
 using Mediator;
 using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Security;
-using OpenRAG.Application.Common;
+using OpenRAG.Application.Common.Results;
 
 namespace OpenRAG.Application.Documents.ListDocuments;
 
-public sealed class ListDocumentsHandler : IRequestHandler<ListDocumentsQuery, ListDocumentsResponse>
+public sealed class ListDocumentsHandler
+    : IRequestHandler<ListDocumentsQuery, Result<ListDocumentsResponse>>
 {
     private const int MaxPageSize = 100;
 
@@ -26,13 +27,31 @@ public sealed class ListDocumentsHandler : IRequestHandler<ListDocumentsQuery, L
         _currentTenant = currentTenant;
     }
 
-    public async ValueTask<ListDocumentsResponse> Handle(
+    public async ValueTask<Result<ListDocumentsResponse>> Handle(
         ListDocumentsQuery query,
         CancellationToken cancellationToken = default)
     {
+        if (query.PageNumber <= 0)
+        {
+            return Result<ListDocumentsResponse>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    "request.page_number_invalid",
+                    "Page number must be greater than zero.",
+                    "pageNumber"));
+        }
+
+        if (query.PageSize <= 0 || query.PageSize > MaxPageSize)
+        {
+            return Result<ListDocumentsResponse>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    "request.page_size_invalid",
+                    $"Page size must be between 1 and {MaxPageSize}.",
+                    "pageSize"));
+        }
+
         var tenantId = _currentTenant.TenantId;
-        var pageNumber = Math.Max(1, query.PageNumber);
-        var pageSize = Math.Clamp(query.PageSize, 1, MaxPageSize);
+        var pageNumber = query.PageNumber;
+        var pageSize = query.PageSize;
 
         var result = await _documentRepository.ListAsync(
             tenantId, pageNumber, pageSize, query.Status, query.Search, cancellationToken);
@@ -60,6 +79,7 @@ public sealed class ListDocumentsHandler : IRequestHandler<ListDocumentsQuery, L
                 embeddingCount));
         }
 
-        return new ListDocumentsResponse(enriched, pageNumber, pageSize, result.TotalCount);
+        return Result<ListDocumentsResponse>.Success(
+            new ListDocumentsResponse(enriched, pageNumber, pageSize, result.TotalCount));
     }
 }

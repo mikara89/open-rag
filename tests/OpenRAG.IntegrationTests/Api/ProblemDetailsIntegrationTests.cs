@@ -32,19 +32,6 @@ public sealed class ProblemDetailsIntegrationTests
     }
 
     [Fact]
-    public async Task Missing_and_foreign_resources_have_identical_public_problem_shape()
-    {
-        var missing = await HandleAsync(new ResourceNotFoundException());
-        var foreign = await HandleAsync(new ResourceNotFoundException());
-
-        Assert.Equal(missing.Status, foreign.Status);
-        Assert.Equal(missing.Type, foreign.Type);
-        Assert.Equal(missing.Title, foreign.Title);
-        Assert.Equal(missing.Detail, foreign.Detail);
-        Assert.Equal(ResourceNotFoundException.PublicMessage, missing.Detail);
-    }
-
-    [Fact]
     public async Task Unexpected_exception_is_generic_even_in_development()
     {
         var problem = await HandleAsync(
@@ -57,11 +44,35 @@ public sealed class ProblemDetailsIntegrationTests
         Assert.DoesNotContain("stack-secret", problem.Detail, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Cancellation_is_not_converted_to_generic_problem_details()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddProblemDetails();
+        await using var provider = services.BuildServiceProvider();
+        var handler = new OpenRagExceptionHandler(
+            provider.GetRequiredService<IProblemDetailsService>(),
+            new TestHostEnvironment(),
+            NullLogger<OpenRagExceptionHandler>.Instance);
+        var context = new DefaultHttpContext
+        {
+            RequestServices = provider,
+            TraceIdentifier = "trace-cancelled"
+        };
+
+        var handled = await handler.TryHandleAsync(
+            context,
+            new OperationCanceledException(),
+            CancellationToken.None);
+
+        Assert.False(handled);
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+    }
+
     public static TheoryData<Exception, int, string> ExceptionMappings() => new()
     {
         { new RequestValidationException("Invalid request."), 400, "request-validation" },
-        { new ResourceNotFoundException(), 404, "resource-not-found" },
-        { new ResourceConflictException("Invalid state."), 409, "resource-conflict" },
         { new IsolationViolationException("tenant-secret storage-secret"), 500, "isolation-violation" }
     };
 

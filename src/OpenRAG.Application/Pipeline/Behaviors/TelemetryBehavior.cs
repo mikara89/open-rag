@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Mediator;
+using OpenRAG.Application.Common.Results;
 
 namespace OpenRAG.Application.Pipeline.Behaviors;
 
@@ -36,20 +37,32 @@ public sealed class TelemetryBehavior<TMessage, TResponse>
             activity?.SetTag("openrag.correlation_id", correlated.CorrelationId);
         }
 
-        if (message is IExplicitTenantMessage explicitTenant
-            && explicitTenant.TenantId != Guid.Empty)
-        {
-            activity?.SetTag("openrag.tenant_id", explicitTenant.TenantId.ToString("D"));
-        }
-
         try
         {
             var response = await next(message, cancellationToken);
+
+            if (response is IApplicationResult { IsFailure: true } rejected)
+            {
+                var primaryError = rejected.Errors[0];
+                activity?.SetTag("openrag.message.outcome", "rejected");
+                activity?.SetTag(
+                    "openrag.error.type",
+                    primaryError.Type switch
+                    {
+                        ApplicationErrorType.Validation => "validation",
+                        ApplicationErrorType.NotFound => "not_found",
+                        ApplicationErrorType.Conflict => "conflict",
+                        _ => "unknown"
+                    });
+                activity?.SetTag("openrag.error.code", primaryError.Code);
+                return response;
+            }
+
             activity?.SetTag("openrag.message.outcome", "success");
             activity?.SetStatus(ActivityStatusCode.Ok);
             return response;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
             activity?.SetTag("openrag.message.outcome", "cancelled");
             throw;

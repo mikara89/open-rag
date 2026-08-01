@@ -22,7 +22,7 @@ public sealed class ListDocumentsHandlerTests
         var fakes = new Fakes(new DocumentListResult(items, 1, 20, 2));
         var handler = new ListDocumentsHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.Tenant);
 
-        var response = await handler.Handle(new ListDocumentsQuery(1, 20));
+        var response = (await handler.Handle(new ListDocumentsQuery(1, 20))).Value;
 
         Assert.Equal(2, response.TotalCount);
         Assert.Equal(2, response.Items.Count);
@@ -30,25 +30,25 @@ public sealed class ListDocumentsHandlerTests
     }
 
     [Fact]
-    public async Task Caps_page_size_at_100()
+    public async Task Rejects_page_size_above_100()
     {
         var fakes = new Fakes(new DocumentListResult(Array.Empty<DocumentListItem>(), 1, 100, 0));
         var handler = new ListDocumentsHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.Tenant);
 
-        var response = await handler.Handle(new ListDocumentsQuery(1, 200));
+        var result = await handler.Handle(new ListDocumentsQuery(1, 200));
 
-        Assert.True(response.PageSize <= 100);
+        Assert.Equal("request.page_size_invalid", result.PrimaryError.Code);
     }
 
     [Fact]
-    public async Task Returns_page_number_at_least_1()
+    public async Task Rejects_invalid_page_number()
     {
         var fakes = new Fakes(new DocumentListResult(Array.Empty<DocumentListItem>(), 1, 20, 0));
         var handler = new ListDocumentsHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.Tenant);
 
-        var response = await handler.Handle(new ListDocumentsQuery(-1, 20));
+        var result = await handler.Handle(new ListDocumentsQuery(-1, 20));
 
-        Assert.Equal(1, response.PageNumber);
+        Assert.Equal("request.page_number_invalid", result.PrimaryError.Code);
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public sealed class ListDocumentsHandlerTests
         var fakes = new Fakes(new DocumentListResult(items, 1, 20, 1));
         var handler = new ListDocumentsHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.Tenant);
 
-        var response = await handler.Handle(new ListDocumentsQuery(1, 20));
+        var response = (await handler.Handle(new ListDocumentsQuery(1, 20))).Value;
 
         Assert.Equal(5, response.Items[0].ChunkCount);
         Assert.Equal(3, response.Items[0].EmbeddingCount);

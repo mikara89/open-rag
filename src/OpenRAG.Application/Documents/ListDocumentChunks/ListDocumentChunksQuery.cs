@@ -1,3 +1,4 @@
+using OpenRAG.Application.Common.Results;
 using OpenRAG.Application.Pipeline;
 
 namespace OpenRAG.Application.Documents.ListDocumentChunks;
@@ -10,7 +11,9 @@ public sealed record ListDocumentChunksQuery(
     string? Search = null,
     string? SectionTitle = null,
     int? PageNumberFilter = null
-) : IOpenRagQuery<ListDocumentChunksResponse>, IAuthenticatedApplicationMessage;
+) : IOpenRagQuery<Result<ListDocumentChunksResponse>>,
+    IAuthenticatedApplicationMessage,
+    IResultApplicationMessage;
 
 public sealed record ListDocumentChunksResponse(
     IReadOnlyList<DocumentChunkItemDto> Items,

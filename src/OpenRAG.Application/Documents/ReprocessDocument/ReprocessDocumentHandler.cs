@@ -5,13 +5,15 @@ using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Storage;
 using OpenRAG.Application.Abstractions.Time;
 using OpenRAG.Application.Common;
+using OpenRAG.Application.Common.Results;
 using OpenRAG.Application.Messaging.Events;
 using OpenRAG.Domain.Documents;
 using OpenRAG.Domain.Processing;
 
 namespace OpenRAG.Application.Documents.ReprocessDocument;
 
-public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocumentCommand, ReprocessDocumentResponse>
+public sealed class ReprocessDocumentHandler
+    : IRequestHandler<ReprocessDocumentCommand, Result<ReprocessDocumentResponse>>
 {
     private readonly IDocumentRepository _documentRepository;
     private readonly IProcessingRunRepository _processingRunRepository;
@@ -39,24 +41,36 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
         _objectKeyPolicy = objectKeyPolicy;
     }
 
-    public async ValueTask<ReprocessDocumentResponse> Handle(
+    public async ValueTask<Result<ReprocessDocumentResponse>> Handle(
         ReprocessDocumentCommand command,
         CancellationToken cancellationToken = default)
     {
-        // 1. Validate
         if (command.DocumentId == Guid.Empty)
-            throw new RequestValidationException("DocumentId cannot be empty.");
+        {
+            return Result<ReprocessDocumentResponse>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    "request.document_id_required", "DocumentId cannot be empty.", "documentId"));
+        }
 
         if (string.IsNullOrWhiteSpace(command.CorrelationId))
-            throw new RequestValidationException("CorrelationId cannot be empty.");
+        {
+            return Result<ReprocessDocumentResponse>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    "request.correlation_id_required",
+                    "CorrelationId cannot be empty.",
+                    "correlationId"));
+        }
 
         if (!command.ForcePreprocess
             && !command.ForceChunk
             && !command.ForceIntelligence
             && !command.ForceEmbeddings)
         {
-            throw new RequestValidationException(
-                "At least one reprocessing stage must be selected.");
+            return Result<ReprocessDocumentResponse>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    "request.reprocess_stage_required",
+                    "At least one reprocessing stage must be selected.",
+                    "stages"));
         }
 
         var tenantId = _currentTenant.TenantId;
@@ -68,20 +82,35 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
             tenantId, command.DocumentId, cancellationToken);
 
         if (document is null)
-            throw new ResourceNotFoundException();
+            return Result<ReprocessDocumentResponse>.Failure(ApplicationErrors.ResourceNotFound());
 
         IsolationGuard.Equal(document.TenantId, tenantId, nameof(document.TenantId));
         IsolationGuard.Equal(document.Id, command.DocumentId, nameof(document.Id));
 
         // 4. Check document can be reprocessed
         if (document.Status == DocumentStatus.Deleted)
-            throw new ResourceConflictException("A deleted document cannot be reprocessed.");
+        {
+            return Result<ReprocessDocumentResponse>.Failure(
+                ApplicationErrors.ResourceConflict(
+                    "document.deleted",
+                    "A deleted document cannot be reprocessed."));
+        }
 
         if (document.Status == DocumentStatus.Processing)
-            throw new ResourceConflictException("The document is already processing.");
+        {
+            return Result<ReprocessDocumentResponse>.Failure(
+                ApplicationErrors.ResourceConflict(
+                    "document.processing",
+                    "The document is already processing."));
+        }
 
         if (document.CurrentVersionId is null)
-            throw new ResourceConflictException("The document has no current version.");
+        {
+            return Result<ReprocessDocumentResponse>.Failure(
+                ApplicationErrors.ResourceConflict(
+                    "processing.invalid_state",
+                    "The document has no current version."));
+        }
 
         var versionId = document.CurrentVersionId.Value;
 
@@ -90,7 +119,7 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
             tenantId, command.DocumentId, versionId, cancellationToken);
 
         if (version is null)
-            throw new ResourceNotFoundException();
+            return Result<ReprocessDocumentResponse>.Failure(ApplicationErrors.ResourceNotFound());
 
         IsolationGuard.Equal(version.TenantId, tenantId, nameof(version.TenantId));
         IsolationGuard.Equal(version.DocumentId, command.DocumentId, nameof(version.DocumentId));
@@ -109,7 +138,12 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
         if (command.ForceChunk)
         {
             if (string.IsNullOrWhiteSpace(version.DoclingMarkdownObjectKey))
-                throw new ResourceConflictException("The Markdown artifact is not available.");
+            {
+                return Result<ReprocessDocumentResponse>.Failure(
+                    ApplicationErrors.ResourceConflict(
+                        "processing.invalid_state",
+                        "The Markdown artifact is not available."));
+            }
 
             _objectKeyPolicy.EnsureOwned(
                 version.DoclingMarkdownObjectKey,
@@ -207,11 +241,11 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
         // 13. Commit transaction
         await transaction.CommitAsync(cancellationToken);
 
-        return new ReprocessDocumentResponse(
+        return Result<ReprocessDocumentResponse>.Success(new ReprocessDocumentResponse(
             DocumentId: command.DocumentId,
             VersionId: versionId,
             Status: "Processing",
-            CorrelationId: command.CorrelationId);
+            CorrelationId: command.CorrelationId));
     }
 
     private static ProcessingRunReason DetermineReason(ReprocessDocumentCommand command)

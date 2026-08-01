@@ -6,12 +6,14 @@ using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Vector;
 using OpenRAG.Application.Common;
+using OpenRAG.Application.Common.Results;
 using OpenRAG.Application.Processing.GenerateEmbeddings;
 using OpenRAG.Application.Rag;
 
 namespace OpenRAG.Application.Rag.AskQuestion;
 
-public sealed class AskQuestionHandler : IRequestHandler<AskQuestionQuery, AskQuestionResponse>
+public sealed class AskQuestionHandler
+    : IRequestHandler<AskQuestionQuery, Result<AskQuestionResponse>>
 {
     private readonly ICurrentTenant _currentTenant;
     private readonly IEmbeddingService _embeddingService;
@@ -42,28 +44,41 @@ public sealed class AskQuestionHandler : IRequestHandler<AskQuestionQuery, AskQu
         _logger = logger;
     }
 
-    public async ValueTask<AskQuestionResponse> Handle(
+    public async ValueTask<Result<AskQuestionResponse>> Handle(
         AskQuestionQuery query,
         CancellationToken cancellationToken = default)
     {
-        // 1. Validate
         if (string.IsNullOrWhiteSpace(query.Question))
         {
-            throw new RequestValidationException("Question cannot be empty.");
+            return Result<AskQuestionResponse>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    "request.question_required", "Question cannot be empty.", "question"));
         }
 
-        // Use query TopK if explicitly provided and valid, otherwise fall back to RagOptions default
-        if (query.TopK.HasValue && query.TopK.Value <= 0)
+        if (query.TopK <= 0)
         {
-            throw new RequestValidationException("TopK must be greater than zero.");
+            return Result<AskQuestionResponse>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    "request.top_k_invalid", "TopK must be greater than zero.", "topK"));
         }
-
-        var effectiveTopK = query.TopK > 0 ? query.TopK.Value : _ragOptions.TopK;
 
         if (string.IsNullOrWhiteSpace(query.Model))
         {
-            throw new RequestValidationException("Model cannot be empty.");
+            return Result<AskQuestionResponse>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    "request.model_required", "Model cannot be empty.", "model"));
         }
+
+        if (string.IsNullOrWhiteSpace(query.CorrelationId))
+        {
+            return Result<AskQuestionResponse>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    "request.correlation_id_required",
+                    "CorrelationId cannot be empty.",
+                    "correlationId"));
+        }
+
+        var effectiveTopK = query.TopK > 0 ? query.TopK.Value : _ragOptions.TopK;
 
         var tenantId = _currentTenant.TenantId;
         if (tenantId == Guid.Empty)
@@ -71,10 +86,14 @@ public sealed class AskQuestionHandler : IRequestHandler<AskQuestionQuery, AskQu
             throw new IsolationViolationException("The trusted tenant context is empty.");
         }
 
-        var authorizedDocumentIds = await AuthorizeDocumentFilterAsync(
+        var authorizationResult = await AuthorizeDocumentFilterAsync(
             tenantId,
             query.FilterDocumentIds,
             cancellationToken);
+        if (authorizationResult.IsFailure)
+            return Result<AskQuestionResponse>.Failure(authorizationResult.Errors);
+
+        var authorizedDocumentIds = authorizationResult.Value.DocumentIds;
 
         // 2. Generate embedding for the question (use configured embedding model, not chat model)
         var embeddingRequest = new EmbeddingRequest(
@@ -111,12 +130,12 @@ public sealed class AskQuestionHandler : IRequestHandler<AskQuestionQuery, AskQu
             const string noResultAnswer =
                 "I could not find relevant information in the indexed documents.";
 
-            return new AskQuestionResponse(
+            return Result<AskQuestionResponse>.Success(new AskQuestionResponse(
                 Answer: noResultAnswer,
                 Citations: Array.Empty<RagCitationDto>(),
                 RetrievedChunks: Array.Empty<RagRetrievedChunkDto>(),
                 Model: query.Model,
-                EstimatedCost: null);
+                EstimatedCost: null));
         }
 
         var searchResults = searchResponse.Results;
@@ -182,30 +201,39 @@ public sealed class AskQuestionHandler : IRequestHandler<AskQuestionQuery, AskQu
             SectionTitle: r.SectionTitle)).ToList();
 
         // 9. Return response
-        return new AskQuestionResponse(
+        return Result<AskQuestionResponse>.Success(new AskQuestionResponse(
             Answer: chatResult.Content,
             Citations: citations,
             RetrievedChunks: retrievedChunks,
             Model: query.Model,
-            EstimatedCost: null);
+            EstimatedCost: null));
     }
 
-    private async Task<IReadOnlyCollection<Guid>?> AuthorizeDocumentFilterAsync(
+    private async Task<Result<AuthorizedDocumentFilter>> AuthorizeDocumentFilterAsync(
         Guid tenantId,
         IReadOnlyCollection<Guid>? requestedDocumentIds,
         CancellationToken cancellationToken)
     {
         if (requestedDocumentIds is null || requestedDocumentIds.Count == 0)
-            return null;
+            return Result<AuthorizedDocumentFilter>.Success(new AuthorizedDocumentFilter(null));
 
         if (requestedDocumentIds.Any(id => id == Guid.Empty))
-            throw new RequestValidationException("Document IDs must be non-empty.");
+        {
+            return Result<AuthorizedDocumentFilter>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    "request.document_filter_invalid",
+                    "Document IDs must be non-empty.",
+                    "documentIds"));
+        }
 
         var normalized = requestedDocumentIds.Distinct().ToArray();
         if (normalized.Length > _ragOptions.MaxDocumentFilterIds)
         {
-            throw new RequestValidationException(
-                $"At most {_ragOptions.MaxDocumentFilterIds} document IDs may be requested.");
+            return Result<AuthorizedDocumentFilter>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    "request.document_filter_invalid",
+                    $"At most {_ragOptions.MaxDocumentFilterIds} document IDs may be requested.",
+                    "documentIds"));
         }
         var existing = await _documentRepository.GetExistingIdsAsync(
             tenantId,
@@ -215,10 +243,10 @@ public sealed class AskQuestionHandler : IRequestHandler<AskQuestionQuery, AskQu
         if (existing.Count != normalized.Length
             || normalized.Any(id => !existing.Contains(id)))
         {
-            throw new ResourceNotFoundException();
+            return Result<AuthorizedDocumentFilter>.Failure(ApplicationErrors.ResourceNotFound());
         }
 
-        return normalized;
+        return Result<AuthorizedDocumentFilter>.Success(new AuthorizedDocumentFilter(normalized));
     }
 
     private void ValidateSearchResults(
@@ -257,4 +285,6 @@ public sealed class AskQuestionHandler : IRequestHandler<AskQuestionQuery, AskQu
                 "Vector retrieval returned a result outside the authorized scope.");
         }
     }
+
+    private sealed record AuthorizedDocumentFilter(IReadOnlyCollection<Guid>? DocumentIds);
 }

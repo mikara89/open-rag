@@ -139,7 +139,7 @@ public interface ICurrentUser {}
 public interface IClock {}
 ```
 
-Application messages are explicitly classified as commands or queries. Scoped Mediator pipeline behaviors provide primitive shape validation, safe tracing, structured scopes, and separate API/Worker context guards. They do not own resource authorization, repository predicates, storage ownership, vector/RAG isolation, transaction boundaries, CAP semantics, or HTTP exception mapping. See [ADR 0004](adr/0004-use-mediator-pipelines-for-narrow-cross-cutting-concerns.md).
+Application messages are explicitly classified as commands or queries. Scoped Mediator pipeline behaviors provide primitive shape validation, safe tracing, structured scopes, and separate API/Worker context guards. Authenticated HTTP messages return the Application-owned `Result<T>` for expected validation, not-found, and conflict outcomes; Worker commands retain ordinary responses and throwing validation. Application errors contain semantic types and stable codes but no HTTP status or ASP.NET Core dependency. The API alone maps Results to endpoint-specific success responses or Problem Details. Pipelines do not own resource authorization, repository predicates, storage ownership, vector/RAG isolation, transaction boundaries, or CAP semantics. See [ADR 0004](adr/0004-use-mediator-pipelines-for-narrow-cross-cutting-concerns.md) and [ADR 0005](adr/0005-use-a-hybrid-result-model-for-expected-api-outcomes.md).
 
 ## Infrastructure layer
 

@@ -27,11 +27,13 @@ The platform accepts files, stores originals through `IFileStorage`, preprocesse
 | [JWT authentication](docs/15-authentication.md) | JWT Bearer configuration, claim contract, policies, and local usage |
 | [Trusted tenant resolution](docs/16-trusted-tenant-resolution.md) | JWT tenant claims, API trust boundary, and Worker propagation |
 | [Authorization and retrieval isolation](docs/17-authorization-and-isolation.md) | Tenant authorization, storage ownership, database constraints, vector retrieval, and RAG fail-closed rules |
+| [Hybrid Result error model](docs/18-hybrid-result-error-model.md) | Expected API outcomes, stable error codes, HTTP compatibility, telemetry, and Worker/CAP boundary |
 | [Security policy](SECURITY.md) | Supported status, vulnerability reporting, and known security limitations |
 | [ADR 0001](docs/adr/0001-use-clean-onion-with-vertical-slices.md) | Architecture style |
 | [ADR 0002](docs/adr/0002-use-aspire-for-local-development.md) | Aspire local development |
 | [ADR 0003](docs/adr/0003-use-cap-with-postgresql-storage.md) | CAP with PostgreSQL storage |
 | [ADR 0004](docs/adr/0004-use-mediator-pipelines-for-narrow-cross-cutting-concerns.md) | Narrow Mediator pipelines for validation, context, scopes, and telemetry |
+| [ADR 0005](docs/adr/0005-use-a-hybrid-result-model-for-expected-api-outcomes.md) | Hybrid Result model for expected API outcomes while Workers remain exception-based |
 
 ## Key decisions
 
@@ -47,7 +49,7 @@ The platform accepts files, stores originals through `IFileStorage`, preprocesse
 - File storage: local filesystem behind `IFileStorage` for the MVP; an S3-compatible provider is planned.
 - Preprocessing: mock or Docling Serve providers behind `IDocumentPreprocessor`.
 - AI providers: OpenAI-compatible interfaces behind abstractions.
-- Application dispatch: scoped Mediator with explicit command/query categories and host-specific validation, context, logging-scope, and telemetry behaviors.
+- Application dispatch: scoped Mediator with explicit command/query categories, API Result validation, throwing Worker validation, context guards, logging scopes, and Result-aware telemetry.
 
 ## MVP capabilities
 
@@ -85,7 +87,7 @@ Every `/api` endpoint requires a validated JWT Bearer token. The default user-ID
 
 The tenant is the current resource-authorization boundary: any authenticated user with a valid trusted tenant claim may operate on that tenant's resources. `CreatedByUserId` is audit metadata, not a per-user ownership ACL. Document/version/chunk reads are explicitly tenant-scoped; persisted object keys are validated against tenant/document/version ownership; pgvector queries parameterize and apply the tenant, optional document filter, embedding compatibility, and full chunk relationship; RAG validates filters before embedding and retrieved identities before any LLM call. See [authorization and retrieval isolation](docs/17-authorization-and-isolation.md).
 
-> **P0.4 authorization and retrieval isolation and the later P0.4.1 Mediator pipeline foundation are complete.** Pipelines provide narrow primitive validation, trusted context guards, logging scopes, and application activities. Resource authorization, storage/vector isolation, transactions, and HTTP error mapping remain explicit outside generic behaviors. P0.5 cross-tenant live integration tests remain planned and still require disposable infrastructure.
+> **P0.4 authorization/isolation, P0.4.1 Mediator pipelines, and P0.4.2 hybrid Result handling are complete.** Expected authenticated HTTP validation, not-found, and conflict outcomes use `Result<T>` and map to compatible Problem Details with stable codes. Technical, cancellation, unexpected, and isolation failures remain exceptions; Worker/CAP semantics remain exception-based. P0.5 cross-tenant live integration tests remain planned and still require disposable infrastructure.
 
 ## Quick validation
 

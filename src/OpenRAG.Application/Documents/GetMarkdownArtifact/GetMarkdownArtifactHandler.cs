@@ -3,10 +3,12 @@ using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Storage;
 using OpenRAG.Application.Common;
+using OpenRAG.Application.Common.Results;
 
 namespace OpenRAG.Application.Documents.GetMarkdownArtifact;
 
-public sealed class GetMarkdownArtifactHandler : IRequestHandler<GetMarkdownArtifactQuery, GetMarkdownArtifactResponse>
+public sealed class GetMarkdownArtifactHandler
+    : IRequestHandler<GetMarkdownArtifactQuery, Result<GetMarkdownArtifactResponse>>
 {
     private readonly IDocumentRepository _documentRepository;
     private readonly IFileStorage _fileStorage;
@@ -25,20 +27,30 @@ public sealed class GetMarkdownArtifactHandler : IRequestHandler<GetMarkdownArti
         _currentTenant = currentTenant;
     }
 
-    public async ValueTask<GetMarkdownArtifactResponse> Handle(
+    public async ValueTask<Result<GetMarkdownArtifactResponse>> Handle(
         GetMarkdownArtifactQuery query,
         CancellationToken cancellationToken = default)
     {
-        var tenantId = _currentTenant.TenantId;
-
         if (query.DocumentId == Guid.Empty || query.VersionId == Guid.Empty)
-            throw new RequestValidationException("Document and version identifiers must be non-empty.");
+        {
+            var target = query.DocumentId == Guid.Empty ? "documentId" : "versionId";
+            var code = query.DocumentId == Guid.Empty
+                ? "request.document_id_required"
+                : "request.version_id_required";
+            return Result<GetMarkdownArtifactResponse>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    code,
+                    $"{(target == "documentId" ? "DocumentId" : "VersionId")} cannot be empty.",
+                    target));
+        }
+
+        var tenantId = _currentTenant.TenantId;
 
         var version = await _documentRepository.GetVersionAsync(
             tenantId, query.DocumentId, query.VersionId, cancellationToken);
 
         if (version is null)
-            throw new ResourceNotFoundException();
+            return Result<GetMarkdownArtifactResponse>.Failure(ApplicationErrors.ResourceNotFound());
 
         IsolationGuard.Equal(version.TenantId, tenantId, nameof(version.TenantId));
         IsolationGuard.Equal(version.DocumentId, query.DocumentId, nameof(version.DocumentId));
@@ -46,7 +58,7 @@ public sealed class GetMarkdownArtifactHandler : IRequestHandler<GetMarkdownArti
 
         if (string.IsNullOrWhiteSpace(version.DoclingMarkdownObjectKey)
             || string.Equals(version.DoclingMarkdownObjectKey, "pending", StringComparison.Ordinal))
-            throw new ResourceNotFoundException();
+            return Result<GetMarkdownArtifactResponse>.Failure(ApplicationErrors.ResourceNotFound());
 
         _objectKeyPolicy.EnsureOwned(
             version.DoclingMarkdownObjectKey,
@@ -61,6 +73,7 @@ public sealed class GetMarkdownArtifactHandler : IRequestHandler<GetMarkdownArti
         using var reader = new StreamReader(stream);
         var content = await reader.ReadToEndAsync(cancellationToken);
 
-        return new GetMarkdownArtifactResponse(content, "text/markdown");
+        return Result<GetMarkdownArtifactResponse>.Success(
+            new GetMarkdownArtifactResponse(content, "text/markdown"));
     }
 }

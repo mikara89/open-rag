@@ -83,4 +83,41 @@ public sealed class OpenApiEndpointTests
             .GetProperty("post");
         Assert.DoesNotContain("tenantId", askOperation.GetRawText(), StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public async Task OpenApi_describes_public_payloads_and_never_result_wrappers()
+    {
+        using var client = _factory.CreateHttpsClient();
+        using var response = await client.GetAsync("/openapi/v1.json", CancellationToken.None);
+        response.EnsureSuccessStatusCode();
+        var json = await response.Content.ReadAsStringAsync(CancellationToken.None);
+
+        Assert.DoesNotContain("isSuccess", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("isFailure", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ResultOf", json, StringComparison.OrdinalIgnoreCase);
+
+        using var document = JsonDocument.Parse(json);
+        var paths = document.RootElement.GetProperty("paths");
+        var expectedSuccesses = new (string Path, string Method, string Status)[]
+        {
+            ("/api/documents", "get", "200"),
+            ("/api/documents/upload", "post", "201"),
+            ("/api/documents/{documentId}/status", "get", "200"),
+            ("/api/documents/{documentId}/reprocess", "post", "202"),
+            ("/api/documents/{documentId}", "get", "200"),
+            ("/api/documents/{documentId}", "delete", "204"),
+            ("/api/documents/{documentId}/versions/{versionId}/artifacts/markdown", "get", "200"),
+            ("/api/documents/{documentId}/versions/{versionId}/artifacts/json", "get", "200"),
+            ("/api/documents/{documentId}/versions/{versionId}/chunks", "get", "200"),
+            ("/api/documents/{documentId}/versions/{versionId}/chunks/{chunkId}", "get", "200"),
+            ("/api/documents/{documentId}/versions/{versionId}/intelligence", "get", "200"),
+            ("/api/rag/ask", "post", "200")
+        };
+
+        Assert.All(expectedSuccesses, expected =>
+        {
+            var operation = paths.GetProperty(expected.Path).GetProperty(expected.Method);
+            Assert.True(operation.GetProperty("responses").TryGetProperty(expected.Status, out _));
+        });
+    }
 }
