@@ -12,13 +12,16 @@ public sealed class GetMarkdownArtifactHandlerTests
     private static readonly Guid TenantId = Guid.NewGuid();
     private static readonly Guid DocId = Guid.NewGuid();
     private static readonly Guid VerId = Guid.NewGuid();
+    private static string MarkdownKey => $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/docling/document.md";
+    private static string JsonKey => $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/docling/document.json";
+    private static string SourceKey => $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/original/source.md";
 
     [Fact]
     public async Task Returns_markdown_content()
     {
-        var version = CreateVersion("md-key", "json-key");
-        var fakes = new Fakes(version, "md-key", "# Hello Markdown");
-        var handler = new GetMarkdownArtifactHandler(fakes.DocRepo, fakes.FileStorage, fakes.Tenant);
+        var version = CreateVersion(MarkdownKey, JsonKey);
+        var fakes = new Fakes(version, MarkdownKey, "# Hello Markdown");
+        var handler = CreateHandler(fakes);
 
         var response = await handler.Handle(new GetMarkdownArtifactQuery(DocId, VerId));
 
@@ -30,9 +33,9 @@ public sealed class GetMarkdownArtifactHandlerTests
     public async Task Returns_404_when_version_not_found()
     {
         var fakes = new Fakes(null, null, null);
-        var handler = new GetMarkdownArtifactHandler(fakes.DocRepo, fakes.FileStorage, fakes.Tenant);
+        var handler = CreateHandler(fakes);
 
-        var ex = await Assert.ThrowsAsync<AppException>(() =>
+        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
             handler.Handle(new GetMarkdownArtifactQuery(DocId, VerId)).AsTask());
         Assert.Contains("not found", ex.Message);
     }
@@ -42,28 +45,28 @@ public sealed class GetMarkdownArtifactHandlerTests
     {
         var version = CreateVersion(null, null);
         var fakes = new Fakes(version, null, null);
-        var handler = new GetMarkdownArtifactHandler(fakes.DocRepo, fakes.FileStorage, fakes.Tenant);
+        var handler = CreateHandler(fakes);
 
-        var ex = await Assert.ThrowsAsync<AppException>(() =>
+        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
             handler.Handle(new GetMarkdownArtifactQuery(DocId, VerId)).AsTask());
-        Assert.Contains("not available", ex.Message.ToLower());
+        Assert.Equal(ResourceNotFoundException.PublicMessage, ex.Message);
     }
 
     [Fact]
     public async Task Does_not_expose_raw_storage_key()
     {
-        var version = CreateVersion("secret/key/path", "json-key");
+        var version = CreateVersion("secret/key/path", JsonKey);
         var fakes = new Fakes(version, "secret/key/path", "content");
-        var handler = new GetMarkdownArtifactHandler(fakes.DocRepo, fakes.FileStorage, fakes.Tenant);
+        var handler = CreateHandler(fakes);
 
-        var response = await handler.Handle(new GetMarkdownArtifactQuery(DocId, VerId));
-
-        Assert.DoesNotContain("secret/key/path", response.Content);
+        await Assert.ThrowsAsync<IsolationViolationException>(() =>
+            handler.Handle(new GetMarkdownArtifactQuery(DocId, VerId)).AsTask());
+        Assert.False(fakes.FileStorage.ReadCalled);
     }
 
     private static DocumentVersion CreateVersion(string? mdKey, string? jsonKey)
     {
-        var version = DocumentVersion.Create(VerId, TenantId, DocId, 1, "orig-key", "text/markdown", 100, "abc");
+        var version = DocumentVersion.Create(VerId, TenantId, DocId, 1, SourceKey, "text/markdown", 100, "abc");
         if (mdKey is not null && jsonKey is not null)
         {
             version.AttachDoclingArtifacts(mdKey, jsonKey);
@@ -71,6 +74,12 @@ public sealed class GetMarkdownArtifactHandlerTests
         }
         return version;
     }
+
+    private static GetMarkdownArtifactHandler CreateHandler(Fakes fakes) => new(
+        fakes.DocRepo,
+        fakes.FileStorage,
+        new OpenRAG.Application.Storage.DocumentObjectKeyPolicy(),
+        fakes.Tenant);
 
     private sealed class Fakes
     {
@@ -106,12 +115,14 @@ public sealed class GetMarkdownArtifactHandlerTests
     {
         private readonly string? _expectedKey;
         private readonly string? _storedContent;
+        public bool ReadCalled { get; private set; }
         public FakeFileStorage(string? expectedKey, string? storedContent) { _expectedKey = expectedKey; _storedContent = storedContent; }
 
         public Task<StoredObjectResult> SaveAsync(Stream c, string k, string ct, CancellationToken _ = default)
             => Task.FromResult(new StoredObjectResult("b", k, ct, 0, null, null));
         public Task<Stream> OpenReadAsync(string key, CancellationToken _ = default)
         {
+            ReadCalled = true;
             if (key != _expectedKey) throw new InvalidOperationException("Wrong key");
             var stream = new MemoryStream();
             var writer = new StreamWriter(stream);

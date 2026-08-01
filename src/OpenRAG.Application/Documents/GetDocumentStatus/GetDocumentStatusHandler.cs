@@ -3,6 +3,7 @@ using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Common;
 using OpenRAG.Domain.Documents;
+using OpenRAG.Domain.Processing;
 
 namespace OpenRAG.Application.Documents.GetDocumentStatus;
 
@@ -34,7 +35,7 @@ public sealed class GetDocumentStatusHandler : IRequestHandler<GetDocumentStatus
     {
         if (query.DocumentId == Guid.Empty)
         {
-            throw new AppException("DocumentId cannot be empty.");
+            throw new RequestValidationException("DocumentId cannot be empty.");
         }
 
         var tenantId = _currentTenant.TenantId;
@@ -44,14 +45,21 @@ public sealed class GetDocumentStatusHandler : IRequestHandler<GetDocumentStatus
 
         if (document is null)
         {
-            throw new AppException($"Document '{query.DocumentId}' not found.");
+            throw new ResourceNotFoundException();
         }
+
+        IsolationGuard.Equal(document.TenantId, tenantId, nameof(document.TenantId));
+        IsolationGuard.Equal(document.Id, query.DocumentId, nameof(document.Id));
 
         var versions = new List<DocumentVersionStatusDto>();
         var allRuns = new List<ProcessingRunHistoryDto>();
 
         foreach (var version in document.Versions)
         {
+            IsolationGuard.Equal(version.TenantId, tenantId, nameof(version.TenantId));
+            IsolationGuard.Equal(version.DocumentId, document.Id, nameof(version.DocumentId));
+            IsolationGuard.NonEmpty(version.Id, nameof(version.Id));
+
             var chunkCount = await _chunkRepository.CountByVersionAsync(
                 tenantId, document.Id, version.Id, cancellationToken);
 
@@ -68,8 +76,20 @@ public sealed class GetDocumentStatusHandler : IRequestHandler<GetDocumentStatus
             var runDtos = new List<ProcessingRunHistoryDto>();
             foreach (var run in runs)
             {
+                IsolationGuard.Equal(run.TenantId, tenantId, nameof(run.TenantId));
+                IsolationGuard.Equal(run.DocumentId, document.Id, nameof(run.DocumentId));
+                IsolationGuard.Equal(run.VersionId, version.Id, nameof(run.VersionId));
+
                 var runSteps = await _processingRunRepository.GetStepsByRunAsync(
                     tenantId, run.Id, cancellationToken);
+
+                foreach (var step in runSteps)
+                {
+                    IsolationGuard.Equal(step.TenantId, tenantId, nameof(step.TenantId));
+                    IsolationGuard.Equal(step.DocumentId, document.Id, nameof(step.DocumentId));
+                    IsolationGuard.Equal(step.VersionId, version.Id, nameof(step.VersionId));
+                    IsolationGuard.Equal(step.ProcessingRunId, run.Id, nameof(step.ProcessingRunId));
+                }
 
                 var stepDtos = runSteps.Select(s => new ProcessingStepHistoryDto(
                     Name: s.StepName.ToString(),
@@ -77,7 +97,7 @@ public sealed class GetDocumentStatusHandler : IRequestHandler<GetDocumentStatus
                     AttemptCount: s.AttemptCount,
                     StartedAt: s.StartedAt,
                     CompletedAt: s.CompletedAt,
-                    ErrorMessage: s.LastErrorMessage
+                    HasError: s.Status == DocumentProcessingStepStatus.Failed
                 )).ToList();
 
                 runDtos.Add(new ProcessingRunHistoryDto(
@@ -96,11 +116,11 @@ public sealed class GetDocumentStatusHandler : IRequestHandler<GetDocumentStatus
             var steps = new List<ProcessingStepStatusDto>
             {
                 new("Preprocess", DeriveStepStatus(version.Status, version.DoclingMarkdownObjectKey),
-                    1, version.CreatedAt, null, null),
+                    1, version.CreatedAt, null, version.Status == DocumentVersionStatus.Failed),
                 new("Chunk", chunkCount > 0 ? "Completed" : "Pending",
-                    1, null, null, null),
+                    1, null, null, false),
                 new("GenerateEmbeddings", embeddingCount > 0 ? "Completed" : "Pending",
-                    1, null, null, null)
+                    1, null, null, false)
             };
 
             var versionStatus = DeriveVersionStatus(version.Status, chunkCount, embeddingCount, steps);
@@ -109,9 +129,11 @@ public sealed class GetDocumentStatusHandler : IRequestHandler<GetDocumentStatus
                 VersionId: version.Id,
                 VersionNumber: version.VersionNumber,
                 Status: versionStatus,
-                OriginalObjectKey: version.OriginalObjectKey,
-                MarkdownObjectKey: version.DoclingMarkdownObjectKey,
-                JsonObjectKey: version.DoclingJsonObjectKey,
+                HasSourceFile: !string.IsNullOrWhiteSpace(version.OriginalObjectKey),
+                HasMarkdownArtifact: !string.IsNullOrWhiteSpace(version.DoclingMarkdownObjectKey)
+                    && version.DoclingMarkdownObjectKey != "pending",
+                HasJsonArtifact: !string.IsNullOrWhiteSpace(version.DoclingJsonObjectKey)
+                    && version.DoclingJsonObjectKey != "pending",
                 ChunkCount: chunkCount,
                 EmbeddingCount: embeddingCount,
                 EmbeddingProvider: embeddingMeta?.Provider,

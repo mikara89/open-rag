@@ -28,6 +28,7 @@ public sealed class GenerateIntelligenceHandler
     private readonly IUnitOfWork _unitOfWork;
     private readonly GenerateIntelligenceOptions _options;
     private readonly ILogger<GenerateIntelligenceHandler> _logger;
+    private readonly IDocumentObjectKeyPolicy _objectKeyPolicy;
 
     public GenerateIntelligenceHandler(
         IDocumentRepository documentRepository,
@@ -39,7 +40,8 @@ public sealed class GenerateIntelligenceHandler
         IClock clock,
         IUnitOfWork unitOfWork,
         IOptions<GenerateIntelligenceOptions> options,
-        ILogger<GenerateIntelligenceHandler> logger)
+        ILogger<GenerateIntelligenceHandler> logger,
+        IDocumentObjectKeyPolicy objectKeyPolicy)
     {
         _documentRepository = documentRepository;
         _intelligenceRepository = intelligenceRepository;
@@ -51,6 +53,7 @@ public sealed class GenerateIntelligenceHandler
         _unitOfWork = unitOfWork;
         _options = options.Value;
         _logger = logger;
+        _objectKeyPolicy = objectKeyPolicy;
     }
 
     public async ValueTask<GenerateIntelligenceResponse> Handle(
@@ -84,6 +87,8 @@ public sealed class GenerateIntelligenceHandler
             return NoOpResult(command, "ProcessingRunNotFound");
         }
 
+        EnsureRunScope(run, command);
+
         // 3. Load document — no-op if missing or deleted
         var document = await _documentRepository.GetByIdForUpdateAsync(
             tenantId, command.DocumentId, cancellationToken);
@@ -96,6 +101,9 @@ public sealed class GenerateIntelligenceHandler
             return NoOpResult(command, "DocumentNotFound");
         }
 
+        IsolationGuard.Equal(document.TenantId, command.TenantId, nameof(document.TenantId));
+        IsolationGuard.Equal(document.Id, command.DocumentId, nameof(document.Id));
+
         if (document.Status == DocumentStatus.Deleted)
         {
             _logger.LogWarning(
@@ -107,6 +115,9 @@ public sealed class GenerateIntelligenceHandler
         // 4. Check idempotency — already completed in this run?
         var existingStep = await _processingRunRepository.GetStepForUpdateAsync(
             tenantId, command.ProcessingRunId, DocumentProcessingStepName.GenerateIntelligence, cancellationToken);
+
+        if (existingStep is not null)
+            EnsureStepScope(existingStep, command);
 
         if (existingStep is not null && existingStep.Status == DocumentProcessingStepStatus.Completed)
         {
@@ -133,13 +144,36 @@ public sealed class GenerateIntelligenceHandler
             return NoOpResult(command, "VersionNotFound");
         }
 
+        IsolationGuard.Equal(version.TenantId, command.TenantId, nameof(version.TenantId));
+        IsolationGuard.Equal(version.DocumentId, command.DocumentId, nameof(version.DocumentId));
+        IsolationGuard.Equal(version.Id, command.VersionId, nameof(version.Id));
+
         // 6. Read markdown artifact (required)
-        if (string.IsNullOrWhiteSpace(version.DoclingMarkdownObjectKey))
+        if (string.IsNullOrWhiteSpace(version.DoclingMarkdownObjectKey)
+            || string.Equals(version.DoclingMarkdownObjectKey, "pending", StringComparison.Ordinal))
         {
             _logger.LogWarning(
                 "Intelligence no-op: No markdown artifact. DocumentId={DocumentId}, VersionId={VersionId}",
                 command.DocumentId, command.VersionId);
             return NoOpResult(command, "NoMarkdownArtifact");
+        }
+
+        _objectKeyPolicy.EnsureOwned(
+            version.DoclingMarkdownObjectKey,
+            tenantId,
+            command.DocumentId,
+            command.VersionId,
+            DocumentObjectKind.Markdown);
+
+        if (!string.IsNullOrWhiteSpace(version.DoclingJsonObjectKey)
+            && !string.Equals(version.DoclingJsonObjectKey, "pending", StringComparison.Ordinal))
+        {
+            _objectKeyPolicy.EnsureOwned(
+                version.DoclingJsonObjectKey,
+                tenantId,
+                command.DocumentId,
+                command.VersionId,
+                DocumentObjectKind.Json);
         }
 
         var markdown = await ReadTextFromStorage(
@@ -155,7 +189,8 @@ public sealed class GenerateIntelligenceHandler
 
         // 7. Optionally read JSON artifact
         string? jsonContent = null;
-        if (!string.IsNullOrWhiteSpace(version.DoclingJsonObjectKey))
+        if (!string.IsNullOrWhiteSpace(version.DoclingJsonObjectKey)
+            && !string.Equals(version.DoclingJsonObjectKey, "pending", StringComparison.Ordinal))
         {
             try
             {
@@ -322,5 +357,27 @@ public sealed class GenerateIntelligenceHandler
         using var stream = await _fileStorage.OpenReadAsync(objectKey, cancellationToken);
         using var reader = new global::System.IO.StreamReader(stream, Encoding.UTF8);
         return await reader.ReadToEndAsync(cancellationToken);
+    }
+
+    private static void EnsureRunScope(
+        DocumentProcessingRun run,
+        GenerateIntelligenceCommand command)
+    {
+        IsolationGuard.Equal(run.TenantId, command.TenantId, nameof(run.TenantId));
+        IsolationGuard.Equal(run.DocumentId, command.DocumentId, nameof(run.DocumentId));
+        IsolationGuard.Equal(run.VersionId, command.VersionId, nameof(run.VersionId));
+    }
+
+    private static void EnsureStepScope(
+        DocumentProcessingStep step,
+        GenerateIntelligenceCommand command)
+    {
+        IsolationGuard.Equal(step.TenantId, command.TenantId, nameof(step.TenantId));
+        IsolationGuard.Equal(step.DocumentId, command.DocumentId, nameof(step.DocumentId));
+        IsolationGuard.Equal(step.VersionId, command.VersionId, nameof(step.VersionId));
+        IsolationGuard.Equal(
+            step.ProcessingRunId,
+            command.ProcessingRunId,
+            nameof(step.ProcessingRunId));
     }
 }

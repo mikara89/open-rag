@@ -19,7 +19,7 @@ public sealed class GetDocumentDetailHandlerTests
         var fakes = new Fakes(null);
         var handler = new GetDocumentDetailHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.IntelligenceRepo, fakes.Tenant);
 
-        var ex = await Assert.ThrowsAsync<AppException>(() =>
+        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
             handler.Handle(new GetDocumentDetailQuery(DocId)).AsTask());
 
         Assert.Contains("not found", ex.Message);

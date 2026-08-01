@@ -11,6 +11,7 @@ public sealed class DocumentProcessingRunConfiguration : IEntityTypeConfiguratio
         builder.ToTable("document_processing_runs");
 
         builder.HasKey(r => r.Id);
+        builder.HasAlternateKey(r => new { r.TenantId, r.DocumentId, r.VersionId, r.Id });
 
         builder.Property(r => r.TenantId)
             .IsRequired();
@@ -40,6 +41,12 @@ public sealed class DocumentProcessingRunConfiguration : IEntityTypeConfiguratio
         builder.Property(r => r.CorrelationId)
             .IsRequired()
             .HasMaxLength(200);
+
+        builder.HasOne<OpenRAG.Domain.Documents.DocumentVersion>()
+            .WithMany()
+            .HasForeignKey(r => new { r.TenantId, r.DocumentId, r.VersionId })
+            .HasPrincipalKey(v => new { v.TenantId, v.DocumentId, v.Id })
+            .OnDelete(DeleteBehavior.Cascade);
 
         // Indexes
         builder.HasIndex(r => new { r.TenantId, r.DocumentId });

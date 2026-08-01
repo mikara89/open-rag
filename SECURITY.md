@@ -29,10 +29,12 @@ Never include real secrets, API keys, access tokens, connection strings, custome
 - `GET /api/system/providers` additionally requires the administrator role (`admin` by default).
 - The Development-only OpenAPI document remains anonymous at `/openapi/v1.json`; it is not mapped outside Development.
 - Tenant identity is resolved exclusively from the validated JWT claim by the API. Request headers, query strings, route values, bodies, and application configuration cannot select or override the tenant; no development fallback exists. Workers preserve the tenant explicitly through CAP events and processing commands.
-- Trusted tenant resolution does not grant resource access. Document-level authorization, exhaustive repository/storage/vector isolation auditing, and adversarial cross-tenant integration tests remain P0.4 and P0.5 work. Authentication and tenant resolution must not be interpreted as production-safe multitenancy.
+- The tenant is the current resource-authorization boundary. Any authenticated user with a valid trusted tenant claim may operate on resources in that tenant. `CreatedByUserId` is audit metadata, not an ownership ACL; users, memberships, sharing, and per-user document ACLs are not implemented.
+- P0.4 enforces explicit tenant-scoped repository reads, full nested-resource identity, tenant/document/version object-key ownership, composite database relationships, parameterized tenant-filtered pgvector retrieval, RAG filter preauthorization, and fail-closed validation before chat-model calls. Missing and foreign resources share the same generic 404 response.
+- P0.5 live adversarial infrastructure remains planned. The current dependency-free tests do not prove real PostgreSQL/pgvector, production object storage, and full API/Worker cross-tenant behavior together; authentication and P0.4 controls must not be interpreted as production-safe multitenancy.
 - The project has not completed production security hardening and must not be treated as production-ready.
 
-Authentication configuration, claim contracts, 401/403 behavior, and secret-handling expectations are documented in [docs/15-authentication.md](docs/15-authentication.md) and [docs/16-trusted-tenant-resolution.md](docs/16-trusted-tenant-resolution.md). Never include raw bearer tokens, signing keys, or identity-provider secrets in issues, pull requests, logs, or committed settings.
+Authentication configuration, claim contracts, denial semantics, and isolation controls are documented in [docs/15-authentication.md](docs/15-authentication.md), [docs/16-trusted-tenant-resolution.md](docs/16-trusted-tenant-resolution.md), and [docs/17-authorization-and-isolation.md](docs/17-authorization-and-isolation.md). Never include raw bearer tokens, signing keys, identity-provider secrets, document content, embedding vectors, complete prompts, or storage keys in issues, pull requests, logs, or committed settings.
 
 ## Response expectations
 

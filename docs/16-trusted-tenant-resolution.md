@@ -60,6 +60,6 @@ Tenant validation cannot be disabled. Changing the claim type without updating t
 
 ## Remaining security work
 
-Trusted tenant resolution establishes where tenant identity comes from; it does not prove that every resource belongs to that tenant or grant access to it. P0.4 remains responsible for complete resource authorization and repository/storage/vector isolation auditing. P0.5 remains responsible for disposable, adversarial cross-tenant integration infrastructure and end-to-end denial tests.
+Trusted tenant resolution establishes where tenant identity comes from. P0.4 now uses that identity as the tenant-level resource boundary through explicit repository predicates, nested identity validation, object-key ownership, composite database constraints, parameterized vector retrieval, and fail-closed RAG validation. `CreatedByUserId` remains audit metadata, not an ownership ACL. See [authorization and retrieval isolation](17-authorization-and-isolation.md).
 
-Trusted tenant resolution is complete, but full resource authorization, repository/storage/vector isolation auditing, and adversarial cross-tenant integration testing remain P0.4 and P0.5 work. OpenRAG is not yet production-safe for multitenant deployment.
+Trusted tenant resolution and P0.4 code-level isolation are complete. P0.5 disposable live infrastructure and end-to-end adversarial denial tests remain planned. OpenRAG is not yet production-safe for multitenant deployment.

@@ -32,6 +32,10 @@ public sealed class EfDocumentIntelligenceRepository : IDocumentIntelligenceRepo
         DocumentIntelligence intelligence,
         CancellationToken cancellationToken = default)
     {
+        RepositoryIsolationGuard.NonEmpty(intelligence.TenantId, nameof(intelligence.TenantId));
+        RepositoryIsolationGuard.NonEmpty(intelligence.DocumentId, nameof(intelligence.DocumentId));
+        RepositoryIsolationGuard.NonEmpty(intelligence.VersionId, nameof(intelligence.VersionId));
+        RepositoryIsolationGuard.NonEmpty(intelligence.Id, nameof(intelligence.Id));
         await _dbContext.Set<DocumentIntelligence>().AddAsync(intelligence, cancellationToken);
     }
 

@@ -15,22 +15,37 @@ namespace OpenRAG.Infrastructure.Preprocessing;
 public sealed class MockDocumentPreprocessor : IDocumentPreprocessor
 {
     private readonly IFileStorage _fileStorage;
+    private readonly IDocumentObjectKeyPolicy _objectKeyPolicy;
 
-    public MockDocumentPreprocessor(IFileStorage fileStorage)
+    public MockDocumentPreprocessor(
+        IFileStorage fileStorage,
+        IDocumentObjectKeyPolicy objectKeyPolicy)
     {
         _fileStorage = fileStorage;
+        _objectKeyPolicy = objectKeyPolicy;
     }
 
     public async Task<DocumentPreprocessingResult> PreprocessAsync(
         DocumentPreprocessingRequest request,
         CancellationToken cancellationToken = default)
     {
-        // Read original file name from the object key (last segment)
-        var basePath = $"tenants/{request.TenantId}/documents/{request.DocumentId}/versions/{request.VersionId}/docling";
+        _objectKeyPolicy.EnsureOwned(
+            request.OriginalObjectKey,
+            request.TenantId,
+            request.DocumentId,
+            request.VersionId,
+            DocumentObjectKind.Source);
 
-        // Build artifact object keys
-        var markdownKey = $"{basePath}/document.md";
-        var jsonKey = $"{basePath}/document.json";
+        var markdownKey = _objectKeyPolicy.BuildArtifactKey(
+            request.TenantId,
+            request.DocumentId,
+            request.VersionId,
+            DocumentObjectKind.Markdown);
+        var jsonKey = _objectKeyPolicy.BuildArtifactKey(
+            request.TenantId,
+            request.DocumentId,
+            request.VersionId,
+            DocumentObjectKind.Json);
 
         // Produce mock Markdown
         var markdownContent = $"# {request.FileName}\n\nMock preprocessed content for {request.FileName}.\n";

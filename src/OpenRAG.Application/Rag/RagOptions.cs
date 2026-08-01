@@ -20,4 +20,9 @@ public sealed class RagOptions
     /// Null means no minimum threshold (all results included).
     /// </summary>
     public double? MinScore { get; init; }
+
+    /// <summary>
+    /// Maximum number of document IDs accepted by a single RAG filter.
+    /// </summary>
+    public int MaxDocumentFilterIds { get; init; } = 100;
 }

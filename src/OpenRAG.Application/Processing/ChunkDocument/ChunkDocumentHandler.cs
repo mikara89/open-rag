@@ -25,6 +25,7 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
     private readonly IClock _clock;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<ChunkDocumentHandler> _logger;
+    private readonly IDocumentObjectKeyPolicy _objectKeyPolicy;
 
     public ChunkDocumentHandler(
         IDocumentRepository documentRepository,
@@ -36,7 +37,8 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
         IDocumentEventBus eventBus,
         IClock clock,
         IUnitOfWork unitOfWork,
-        ILogger<ChunkDocumentHandler> logger)
+        ILogger<ChunkDocumentHandler> logger,
+        IDocumentObjectKeyPolicy objectKeyPolicy)
     {
         _documentRepository = documentRepository;
         _documentChunkRepository = documentChunkRepository;
@@ -48,6 +50,7 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
         _clock = clock;
         _unitOfWork = unitOfWork;
         _logger = logger;
+        _objectKeyPolicy = objectKeyPolicy;
     }
 
     public async ValueTask<ChunkDocumentResponse> Handle(
@@ -84,6 +87,10 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
             return NoOpResult(command, "VersionNotFound");
         }
 
+        IsolationGuard.Equal(version.TenantId, command.TenantId, nameof(version.TenantId));
+        IsolationGuard.Equal(version.DocumentId, command.DocumentId, nameof(version.DocumentId));
+        IsolationGuard.Equal(version.Id, command.VersionId, nameof(version.Id));
+
         var document = await _documentRepository.GetByIdForUpdateAsync(
             tenantId, command.DocumentId, cancellationToken);
 
@@ -94,6 +101,9 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
                 command.DocumentId, command.CorrelationId);
             return NoOpResult(command, "DocumentNotFound");
         }
+
+        IsolationGuard.Equal(document.TenantId, command.TenantId, nameof(document.TenantId));
+        IsolationGuard.Equal(document.Id, command.DocumentId, nameof(document.Id));
 
         if (document.Status == DocumentStatus.Deleted)
         {
@@ -123,9 +133,14 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
             return NoOpResult(command, "ProcessingRunNotFound");
         }
 
+        EnsureRunScope(run, command);
+
         // 5. Check if Chunk step already completed (idempotency within same run)
         var existingStep = await _processingRunRepository.GetStepForUpdateAsync(
             tenantId, command.ProcessingRunId, DocumentProcessingStepName.Chunk, cancellationToken);
+
+        if (existingStep is not null)
+            EnsureStepScope(existingStep, command);
 
         if (existingStep is not null && existingStep.Status == DocumentProcessingStepStatus.Completed)
         {
@@ -141,6 +156,24 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
                 VersionId: command.VersionId,
                 ChunkCount: existingChunks.Count,
                 Status: "AlreadyChunked");
+        }
+
+        _objectKeyPolicy.EnsureOwned(
+            version.DoclingMarkdownObjectKey,
+            tenantId,
+            command.DocumentId,
+            command.VersionId,
+            DocumentObjectKind.Markdown);
+
+        if (!string.IsNullOrWhiteSpace(version.DoclingJsonObjectKey)
+            && version.DoclingJsonObjectKey != "pending")
+        {
+            _objectKeyPolicy.EnsureOwned(
+                version.DoclingJsonObjectKey,
+                tenantId,
+                command.DocumentId,
+                command.VersionId,
+                DocumentObjectKind.Json);
         }
 
         // 6. Clean up old chunks and embeddings before recreating (safe idempotency)
@@ -309,5 +342,23 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
             VersionId: command.VersionId,
             ChunkCount: 0,
             Status: reason);
+    }
+
+    private static void EnsureRunScope(DocumentProcessingRun run, ChunkDocumentCommand command)
+    {
+        IsolationGuard.Equal(run.TenantId, command.TenantId, nameof(run.TenantId));
+        IsolationGuard.Equal(run.DocumentId, command.DocumentId, nameof(run.DocumentId));
+        IsolationGuard.Equal(run.VersionId, command.VersionId, nameof(run.VersionId));
+    }
+
+    private static void EnsureStepScope(DocumentProcessingStep step, ChunkDocumentCommand command)
+    {
+        IsolationGuard.Equal(step.TenantId, command.TenantId, nameof(step.TenantId));
+        IsolationGuard.Equal(step.DocumentId, command.DocumentId, nameof(step.DocumentId));
+        IsolationGuard.Equal(step.VersionId, command.VersionId, nameof(step.VersionId));
+        IsolationGuard.Equal(
+            step.ProcessingRunId,
+            command.ProcessingRunId,
+            nameof(step.ProcessingRunId));
     }
 }

@@ -2,6 +2,7 @@ using Mediator;
 using OpenRAG.Application.Abstractions.Messaging;
 using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Security;
+using OpenRAG.Application.Abstractions.Storage;
 using OpenRAG.Application.Abstractions.Time;
 using OpenRAG.Application.Common;
 using OpenRAG.Application.Messaging.Events;
@@ -21,6 +22,7 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
     private readonly ICurrentTenant _currentTenant;
     private readonly IClock _clock;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IDocumentObjectKeyPolicy _objectKeyPolicy;
 
     public ReprocessDocumentHandler(
         IDocumentRepository documentRepository,
@@ -31,7 +33,8 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
         IDocumentEventBus eventBus,
         ICurrentTenant currentTenant,
         IClock clock,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IDocumentObjectKeyPolicy objectKeyPolicy)
     {
         _documentRepository = documentRepository;
         _chunkRepository = chunkRepository;
@@ -42,6 +45,7 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
         _currentTenant = currentTenant;
         _clock = clock;
         _unitOfWork = unitOfWork;
+        _objectKeyPolicy = objectKeyPolicy;
     }
 
     public async ValueTask<ReprocessDocumentResponse> Handle(
@@ -50,36 +54,34 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
     {
         // 1. Validate
         if (command.DocumentId == Guid.Empty)
-            throw new AppException("DocumentId cannot be empty.");
+            throw new RequestValidationException("DocumentId cannot be empty.");
 
         if (string.IsNullOrWhiteSpace(command.CorrelationId))
-            throw new AppException("CorrelationId cannot be empty.");
+            throw new RequestValidationException("CorrelationId cannot be empty.");
 
         var tenantId = _currentTenant.TenantId;
         if (tenantId == Guid.Empty)
-            throw new AppException("Current tenant ID cannot be empty.");
+            throw new IsolationViolationException("The trusted tenant context is empty.");
 
         // 2. Load document for update (tracking query)
         var document = await _documentRepository.GetByIdForUpdateAsync(
             tenantId, command.DocumentId, cancellationToken);
 
         if (document is null)
-            throw new AppException($"Document '{command.DocumentId}' not found.");
+            throw new ResourceNotFoundException();
 
-        // 3. Validate tenant ownership
-        if (document.TenantId != tenantId)
-            throw new AppException($"Document '{command.DocumentId}' does not belong to tenant '{tenantId}'.");
+        IsolationGuard.Equal(document.TenantId, tenantId, nameof(document.TenantId));
+        IsolationGuard.Equal(document.Id, command.DocumentId, nameof(document.Id));
 
         // 4. Check document can be reprocessed
         if (document.Status == DocumentStatus.Deleted)
-            throw new AppException($"Cannot reprocess deleted document '{command.DocumentId}'.");
+            throw new ResourceConflictException("A deleted document cannot be reprocessed.");
 
         if (document.Status == DocumentStatus.Processing)
-            throw new AppException(
-                $"Document '{command.DocumentId}' is already processing. Wait for it to complete or fail before reprocessing.");
+            throw new ResourceConflictException("The document is already processing.");
 
         if (document.CurrentVersionId is null)
-            throw new AppException($"Document '{command.DocumentId}' has no version.");
+            throw new ResourceConflictException("The document has no current version.");
 
         var versionId = document.CurrentVersionId.Value;
 
@@ -88,7 +90,34 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
             tenantId, command.DocumentId, versionId, cancellationToken);
 
         if (version is null)
-            throw new AppException($"Version '{versionId}' not found.");
+            throw new ResourceNotFoundException();
+
+        IsolationGuard.Equal(version.TenantId, tenantId, nameof(version.TenantId));
+        IsolationGuard.Equal(version.DocumentId, command.DocumentId, nameof(version.DocumentId));
+        IsolationGuard.Equal(version.Id, versionId, nameof(version.Id));
+
+        if (command.ForcePreprocess)
+        {
+            _objectKeyPolicy.EnsureOwned(
+                version.OriginalObjectKey,
+                tenantId,
+                command.DocumentId,
+                versionId,
+                DocumentObjectKind.Source);
+        }
+
+        if (command.ForceChunk)
+        {
+            if (string.IsNullOrWhiteSpace(version.DoclingMarkdownObjectKey))
+                throw new ResourceConflictException("The Markdown artifact is not available.");
+
+            _objectKeyPolicy.EnsureOwned(
+                version.DoclingMarkdownObjectKey,
+                tenantId,
+                command.DocumentId,
+                versionId,
+                DocumentObjectKind.Markdown);
+        }
 
         // 5. Generate processing run ID
         var processingRunId = Guid.NewGuid();

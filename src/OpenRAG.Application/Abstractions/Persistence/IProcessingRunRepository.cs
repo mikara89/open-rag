@@ -19,7 +19,7 @@ public interface IProcessingRunRepository
         CancellationToken cancellationToken = default);
 
     Task AddStepAsync(
-        DocumentProcessingStep step,
+        DocumentProcessingStep processingStep,
         CancellationToken cancellationToken = default);
 
     Task<DocumentProcessingStep?> GetStepAsync(

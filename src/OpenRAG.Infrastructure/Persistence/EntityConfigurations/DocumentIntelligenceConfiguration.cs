@@ -55,6 +55,12 @@ public sealed class DocumentIntelligenceConfiguration : IEntityTypeConfiguration
         builder.Property(e => e.UpdatedAt)
             .IsRequired();
 
+        builder.HasOne<DocumentVersion>()
+            .WithMany()
+            .HasForeignKey(e => new { e.TenantId, e.DocumentId, e.VersionId })
+            .HasPrincipalKey(v => new { v.TenantId, v.DocumentId, v.Id })
+            .OnDelete(DeleteBehavior.Cascade);
+
         // One active intelligence record per version
         builder.HasIndex(e => new { e.TenantId, e.VersionId })
             .IsUnique();

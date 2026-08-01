@@ -11,6 +11,7 @@ public sealed class DocumentVersionConfiguration : IEntityTypeConfiguration<Docu
         builder.ToTable("document_versions");
 
         builder.HasKey(v => v.Id);
+        builder.HasAlternateKey(v => new { v.TenantId, v.DocumentId, v.Id });
 
         builder.Property(v => v.TenantId)
             .IsRequired();
@@ -52,11 +53,16 @@ public sealed class DocumentVersionConfiguration : IEntityTypeConfiguration<Docu
         builder.Property(v => v.CreatedAt)
             .IsRequired();
 
+        builder.HasOne<Document>()
+            .WithMany("_versions")
+            .HasForeignKey(v => new { v.TenantId, v.DocumentId })
+            .HasPrincipalKey(d => new { d.TenantId, d.Id })
+            .OnDelete(DeleteBehavior.Cascade);
+
         // Indexes
         builder.HasIndex(v => new { v.TenantId, v.DocumentId });
         builder.HasIndex(v => new { v.TenantId, v.DocumentId, v.VersionNumber })
             .IsUnique();
-        builder.HasIndex(v => new { v.TenantId, v.DocumentId, v.Id });
         builder.HasIndex(v => new { v.TenantId, v.Status });
     }
 }

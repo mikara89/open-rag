@@ -67,6 +67,25 @@ public sealed class GenerateEmbeddingsHandlerTests
         var response = await handler.Handle(cmd);
 
         Assert.Equal("ProcessingRunNotFound", response.Status);
+        Assert.Equal(0, fakes.EmbeddingService.CallCount);
+        Assert.False(fakes.EmbeddingRepo.EmbeddingsAdded);
+        Assert.Null(fakes.EventBus.LastEvent);
+        Assert.False(fakes.UnitOfWork.SaveChangesCalled);
+    }
+
+    [Fact]
+    public async Task Foreign_tenant_run_scope_performs_no_secondary_work()
+    {
+        var fakes = CreateFakes(runMissing: true);
+
+        var response = await CreateHandler(fakes).Handle(
+            new GenerateEmbeddingsCommand(TenantId, DocId, VerId, RunId, "foreign-scope"));
+
+        Assert.Equal("ProcessingRunNotFound", response.Status);
+        Assert.Equal(0, fakes.EmbeddingService.CallCount);
+        Assert.False(fakes.EmbeddingRepo.EmbeddingsAdded);
+        Assert.Null(fakes.EventBus.LastEvent);
+        Assert.False(fakes.UnitOfWork.SaveChangesCalled);
     }
 
     [Fact]
@@ -278,7 +297,15 @@ public sealed class GenerateEmbeddingsHandlerTests
         public Task<DocumentVersion?> GetVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
             => Task.FromResult<DocumentVersion?>(null);
         public Task<DocumentVersion?> GetVersionForUpdateAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
-            => Task.FromResult<DocumentVersion?>(null);
+            => Task.FromResult<DocumentVersion?>(DocumentVersion.Create(
+                vid,
+                tid,
+                did,
+                1,
+                $"tenants/{tid:D}/documents/{did:D}/versions/{vid:D}/original/source.md",
+                "text/markdown",
+                100,
+                "hash"));
         public Task<bool> ExistsAsync(Guid tid, Guid did, CancellationToken ct = default) => Task.FromResult(true);
 
         public Task<DocumentListResult> ListAsync(Guid tid, int pn, int ps, string? sf, string? s, CancellationToken ct = default)

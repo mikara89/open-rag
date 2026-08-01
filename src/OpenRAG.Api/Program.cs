@@ -1,4 +1,5 @@
 using Mediator;
+using OpenRAG.Api.Errors;
 using OpenRAG.Api.Security;
 using OpenRAG.Application;
 using OpenRAG.Application.Documents.DeleteDocument;
@@ -24,6 +25,8 @@ builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddMediator(options => options.ServiceLifetime = ServiceLifetime.Scoped);
 builder.Services.AddOpenRagAuthentication(builder.Configuration);
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<OpenRagExceptionHandler>();
 builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
@@ -39,6 +42,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -223,10 +227,6 @@ api.MapGet("/documents/{documentId:guid}/versions/{versionId:guid}/intelligence"
 {
     var query = new GetDocumentIntelligenceQuery(documentId, versionId);
     var response = await sender.Send(query, cancellationToken);
-
-    if (response is null)
-        return Results.NotFound(new { message = "No intelligence data for this version." });
-
     return Results.Ok(response);
 })
 .WithName("GetDocumentIntelligence");

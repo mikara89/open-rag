@@ -17,6 +17,24 @@ public sealed class EfDocumentChunkRepository : IDocumentChunkRepository
         IReadOnlyCollection<DocumentChunk> chunks,
         CancellationToken cancellationToken = default)
     {
+        if (chunks.Count == 0)
+            return;
+
+        var first = chunks.First();
+        var tenantId = first.TenantId;
+        var documentId = first.DocumentId;
+        var versionId = first.VersionId;
+        RepositoryIsolationGuard.NonEmpty(tenantId, nameof(tenantId));
+        RepositoryIsolationGuard.NonEmpty(documentId, nameof(documentId));
+        RepositoryIsolationGuard.NonEmpty(versionId, nameof(versionId));
+        foreach (var chunk in chunks)
+        {
+            RepositoryIsolationGuard.Equal(chunk.TenantId, tenantId, nameof(chunk.TenantId));
+            RepositoryIsolationGuard.Equal(chunk.DocumentId, documentId, nameof(chunk.DocumentId));
+            RepositoryIsolationGuard.Equal(chunk.VersionId, versionId, nameof(chunk.VersionId));
+            RepositoryIsolationGuard.NonEmpty(chunk.Id, nameof(chunk.Id));
+        }
+
         await _dbContext.DocumentChunks.AddRangeAsync(chunks, cancellationToken);
     }
 

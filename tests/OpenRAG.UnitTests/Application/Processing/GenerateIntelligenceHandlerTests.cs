@@ -52,18 +52,35 @@ public sealed class GenerateIntelligenceHandlerTests
         Assert.Equal(TenantId, published.TenantId);
     }
 
+    [Fact]
+    public async Task Foreign_tenant_document_scope_performs_no_secondary_work()
+    {
+        var fakes = new Fakes();
+        fakes.DocumentRepository.ReturnMissing = true;
+
+        var response = await CreateHandler(fakes).Handle(new GenerateIntelligenceCommand(
+            TenantId, DocumentId, VersionId, RunId, "foreign-scope"));
+
+        Assert.Equal("DocumentNotFound", response.Status);
+        Assert.False(fakes.FileStorage.ReadCalled);
+        Assert.Null(fakes.IntelligenceService.LastRequest);
+        Assert.Null(fakes.IntelligenceRepository.Added);
+        Assert.Null(fakes.EventBus.LastEvent);
+    }
+
     private static GenerateIntelligenceHandler CreateHandler(Fakes fakes)
         => new(
             fakes.DocumentRepository,
             fakes.IntelligenceRepository,
             fakes.RunRepository,
-            new FakeFileStorage(),
+            fakes.FileStorage,
             fakes.IntelligenceService,
             fakes.EventBus,
             new StubClock(),
             new FakeUnitOfWork(),
             Options.Create(new GenerateIntelligenceOptions()),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<GenerateIntelligenceHandler>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<GenerateIntelligenceHandler>.Instance,
+            new OpenRAG.Application.Storage.DocumentObjectKeyPolicy());
 
     private sealed class Fakes
     {
@@ -72,23 +89,37 @@ public sealed class GenerateIntelligenceHandlerTests
         public FakeRunRepository RunRepository { get; } = new();
         public FakeIntelligenceService IntelligenceService { get; } = new();
         public FakeEventBus EventBus { get; } = new();
+        public FakeFileStorage FileStorage { get; } = new();
     }
 
     private sealed class FakeDocumentRepository : IDocumentRepository
     {
         public Guid LastTenantId { get; private set; }
+        public bool ReturnMissing { get; set; }
 
         public Task<Document?> GetByIdForUpdateAsync(Guid tenantId, Guid documentId, CancellationToken ct = default)
         {
             LastTenantId = tenantId;
-            return Task.FromResult<Document?>(Document.Create(documentId, tenantId, "title", "file.pdf", Guid.NewGuid()));
+            return Task.FromResult<Document?>(ReturnMissing
+                ? null
+                : Document.Create(documentId, tenantId, "title", "file.pdf", Guid.NewGuid()));
         }
 
         public Task<DocumentVersion?> GetVersionForUpdateAsync(Guid tenantId, Guid documentId, Guid versionId, CancellationToken ct = default)
         {
             LastTenantId = tenantId;
-            var version = DocumentVersion.Create(versionId, tenantId, documentId, 1, "original", "application/pdf", 10, "hash");
-            version.AttachDoclingArtifacts("markdown", "json");
+            var version = DocumentVersion.Create(
+                versionId,
+                tenantId,
+                documentId,
+                1,
+                $"tenants/{tenantId:D}/documents/{documentId:D}/versions/{versionId:D}/original/source.pdf",
+                "application/pdf",
+                10,
+                "hash");
+            version.AttachDoclingArtifacts(
+                $"tenants/{tenantId:D}/documents/{documentId:D}/versions/{versionId:D}/docling/document.md",
+                $"tenants/{tenantId:D}/documents/{documentId:D}/versions/{versionId:D}/docling/document.json");
             return Task.FromResult<DocumentVersion?>(version);
         }
 
@@ -146,8 +177,12 @@ public sealed class GenerateIntelligenceHandlerTests
 
     private sealed class FakeFileStorage : IFileStorage
     {
+        public bool ReadCalled { get; private set; }
         public Task<Stream> OpenReadAsync(string objectKey, CancellationToken ct = default)
-            => Task.FromResult<Stream>(new MemoryStream(global::System.Text.Encoding.UTF8.GetBytes("document content")));
+        {
+            ReadCalled = true;
+            return Task.FromResult<Stream>(new MemoryStream(global::System.Text.Encoding.UTF8.GetBytes("document content")));
+        }
         public Task<StoredObjectResult> SaveAsync(Stream content, string objectKey, string contentType, CancellationToken ct = default)
             => throw new NotSupportedException();
         public Task DeleteAsync(string objectKey, CancellationToken ct = default) => throw new NotSupportedException();

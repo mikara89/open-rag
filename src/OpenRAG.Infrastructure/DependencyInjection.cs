@@ -50,7 +50,11 @@ public static class DependencyInjection
                 npgsqlOptions.UseVector()));
 
         // Persistence
-        services.AddScoped<IDocumentRepository, EfDocumentRepository>();
+        services.AddScoped<EfDocumentRepository>();
+        services.AddScoped<IDocumentRepository>(provider =>
+            provider.GetRequiredService<EfDocumentRepository>());
+        services.AddScoped<IDocumentAuthorizationRepository>(provider =>
+            provider.GetRequiredService<EfDocumentRepository>());
         services.AddScoped<IProcessingRunRepository, EfProcessingRunRepository>();
         services.AddScoped<IDocumentChunkRepository, EfDocumentChunkRepository>();
         services.AddScoped<IDocumentEmbeddingRepository, EfDocumentEmbeddingRepository>();

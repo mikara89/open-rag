@@ -122,7 +122,9 @@ OccurredAt
 
 `TenantId` originates from the validated JWT tenant claim on the initial API request. The Worker has no HTTP tenant resolver or development fallback. Each CAP consumer copies the event tenant unchanged into the next processing command or event; preprocess, chunk, intelligence, and embedding handlers reject an empty tenant and use the command tenant for every scoped operation.
 
-See [trusted tenant resolution](16-trusted-tenant-resolution.md) for the API/Worker trust boundary. This explicit propagation does not replace the P0.4 resource-authorization and isolation audit.
+See [trusted tenant resolution](16-trusted-tenant-resolution.md) for the API/Worker trust boundary and [authorization and retrieval isolation](17-authorization-and-isolation.md) for the completed P0.4 audit.
+
+Each processing handler performs tenant-scoped document, version, run, and step lookups and validates every returned tenant/document/version/run identity. Preprocessing and artifact consumers validate persisted storage keys before I/O; chunks, embeddings, intelligence rows, and downstream events are created with the command tenant. A missing row in the command tenant is an intentional idempotent no-op: the handler never retries without the tenant, and focused tests verify no storage, provider, persistence, or downstream-event call occurs.
 
 Optional but recommended:
 

@@ -43,8 +43,8 @@ public sealed class LocalFileStorage : IFileStorage
         var sha256 = ComputeSha256(fullPath);
 
         _logger.LogInformation(
-            "Saved file: {ObjectKey}, Size: {SizeBytes}, Sha256: {Sha256}",
-            normalizedKey, sizeBytes, sha256);
+            "Saved storage object. SizeBytes={SizeBytes}, Sha256={Sha256}",
+            sizeBytes, sha256);
 
         return new StoredObjectResult(
             Bucket: "local",

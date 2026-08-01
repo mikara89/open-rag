@@ -14,6 +14,7 @@ public sealed class DeleteDocumentHandler : IRequestHandler<DeleteDocumentComman
     private readonly IDocumentChunkRepository _chunkRepository;
     private readonly IDocumentEmbeddingRepository _embeddingRepository;
     private readonly IFileStorage _fileStorage;
+    private readonly IDocumentObjectKeyPolicy _objectKeyPolicy;
     private readonly ICurrentTenant _currentTenant;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<DeleteDocumentHandler> _logger;
@@ -23,6 +24,7 @@ public sealed class DeleteDocumentHandler : IRequestHandler<DeleteDocumentComman
         IDocumentChunkRepository chunkRepository,
         IDocumentEmbeddingRepository embeddingRepository,
         IFileStorage fileStorage,
+        IDocumentObjectKeyPolicy objectKeyPolicy,
         ICurrentTenant currentTenant,
         IUnitOfWork unitOfWork,
         ILogger<DeleteDocumentHandler> logger)
@@ -31,6 +33,7 @@ public sealed class DeleteDocumentHandler : IRequestHandler<DeleteDocumentComman
         _chunkRepository = chunkRepository;
         _embeddingRepository = embeddingRepository;
         _fileStorage = fileStorage;
+        _objectKeyPolicy = objectKeyPolicy;
         _currentTenant = currentTenant;
         _unitOfWork = unitOfWork;
         _logger = logger;
@@ -41,7 +44,7 @@ public sealed class DeleteDocumentHandler : IRequestHandler<DeleteDocumentComman
         CancellationToken cancellationToken = default)
     {
         if (command.DocumentId == Guid.Empty)
-            throw new AppException("DocumentId cannot be empty.");
+            throw new RequestValidationException("DocumentId cannot be empty.");
 
         var tenantId = _currentTenant.TenantId;
 
@@ -50,12 +53,17 @@ public sealed class DeleteDocumentHandler : IRequestHandler<DeleteDocumentComman
             tenantId, command.DocumentId, cancellationToken);
 
         if (document is null)
-            throw new AppException($"Document '{command.DocumentId}' not found.");
+            throw new ResourceNotFoundException();
+
+        IsolationGuard.Equal(document.TenantId, tenantId, nameof(document.TenantId));
+        IsolationGuard.Equal(document.Id, command.DocumentId, nameof(document.Id));
 
         // Reject if processing — avoid partial state
         if (document.Status == DocumentStatus.Processing)
-            throw new AppException(
-                $"Cannot delete document '{command.DocumentId}' while it is processing. Wait for it to complete or fail first.");
+            throw new ResourceConflictException(
+                "The document cannot be deleted while it is processing.");
+
+        ValidateStorageKeys(document, tenantId);
 
         // Begin transaction
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
@@ -63,6 +71,10 @@ public sealed class DeleteDocumentHandler : IRequestHandler<DeleteDocumentComman
         // Delete embeddings for all versions
         foreach (var version in document.Versions)
         {
+            IsolationGuard.Equal(version.TenantId, tenantId, nameof(version.TenantId));
+            IsolationGuard.Equal(version.DocumentId, document.Id, nameof(version.DocumentId));
+            IsolationGuard.NonEmpty(version.Id, nameof(version.Id));
+
             await _embeddingRepository.DeleteByVersionAsync(
                 tenantId, document.Id, version.Id, cancellationToken);
         }
@@ -75,13 +87,13 @@ public sealed class DeleteDocumentHandler : IRequestHandler<DeleteDocumentComman
         }
 
         // Delete the document (cascade-deletes versions via EF owned relationship)
+        IsolationGuard.Equal(document.TenantId, tenantId, nameof(document.TenantId));
         await _documentRepository.DeleteAsync(document, cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        // Best-effort physical storage cleanup for generated artifacts
-        // Source files are preserved; only Docling artifacts are cleaned up.
+        // Best-effort physical storage cleanup after authorization and key validation.
         await TryCleanupStorageArtifacts(document, cancellationToken);
 
         return new DeleteDocumentResponse(command.DocumentId, true);
@@ -97,35 +109,66 @@ public sealed class DeleteDocumentHandler : IRequestHandler<DeleteDocumentComman
     {
         foreach (var version in document.Versions)
         {
+            await TryDelete(version.OriginalObjectKey, cancellationToken);
+
             if (!string.IsNullOrWhiteSpace(version.DoclingMarkdownObjectKey)
                 && version.DoclingMarkdownObjectKey != "pending")
             {
-                try
-                {
-                    await _fileStorage.DeleteAsync(version.DoclingMarkdownObjectKey, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex,
-                        "Best-effort cleanup: failed to delete Markdown artifact. Key={ObjectKey}",
-                        version.DoclingMarkdownObjectKey);
-                }
+                await TryDelete(version.DoclingMarkdownObjectKey, cancellationToken);
             }
 
             if (!string.IsNullOrWhiteSpace(version.DoclingJsonObjectKey)
                 && version.DoclingJsonObjectKey != "pending")
             {
-                try
-                {
-                    await _fileStorage.DeleteAsync(version.DoclingJsonObjectKey, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex,
-                        "Best-effort cleanup: failed to delete JSON artifact. Key={ObjectKey}",
-                        version.DoclingJsonObjectKey);
-                }
+                await TryDelete(version.DoclingJsonObjectKey, cancellationToken);
             }
+        }
+    }
+
+    private void ValidateStorageKeys(Document document, Guid tenantId)
+    {
+        foreach (var version in document.Versions)
+        {
+            _objectKeyPolicy.EnsureOwned(
+                version.OriginalObjectKey,
+                tenantId,
+                document.Id,
+                version.Id,
+                DocumentObjectKind.Source);
+
+            if (!string.IsNullOrWhiteSpace(version.DoclingMarkdownObjectKey)
+                && version.DoclingMarkdownObjectKey != "pending")
+            {
+                _objectKeyPolicy.EnsureOwned(
+                    version.DoclingMarkdownObjectKey,
+                    tenantId,
+                    document.Id,
+                    version.Id,
+                    DocumentObjectKind.Markdown);
+            }
+
+            if (!string.IsNullOrWhiteSpace(version.DoclingJsonObjectKey)
+                && version.DoclingJsonObjectKey != "pending")
+            {
+                _objectKeyPolicy.EnsureOwned(
+                    version.DoclingJsonObjectKey,
+                    tenantId,
+                    document.Id,
+                    version.Id,
+                    DocumentObjectKind.Json);
+            }
+        }
+    }
+
+    private async Task TryDelete(string objectKey, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _fileStorage.DeleteAsync(objectKey, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Best-effort cleanup failed for a validated document object.");
         }
     }
 }

@@ -28,7 +28,8 @@ public sealed class ReprocessDocumentHandlerTests
             fakes.EventBus,
             fakes.Tenant,
             fakes.Clock,
-            fakes.Uow);
+            fakes.Uow,
+            new OpenRAG.Application.Storage.DocumentObjectKeyPolicy());
     }
 
     private static ReprocessDocumentCommand CreateCommand(
@@ -50,8 +51,10 @@ public sealed class ReprocessDocumentHandlerTests
     {
         var doc = Document.Create(DocumentId, TenantId, "test.md", "test.md", UserId);
         doc.MarkProcessing();
-        var version = doc.AddVersion(VersionId, 1, "tenants/tid/docs/did/versions/vid/original/test.md", "text/markdown", 1024, "abc123");
-        version.AttachDoclingArtifacts("markdown-key", "json-key");
+        var version = doc.AddVersion(VersionId, 1, $"tenants/{TenantId:D}/documents/{DocumentId:D}/versions/{VersionId:D}/original/test.md", "text/markdown", 1024, "abc123");
+        version.AttachDoclingArtifacts(
+            $"tenants/{TenantId:D}/documents/{DocumentId:D}/versions/{VersionId:D}/docling/document.md",
+            $"tenants/{TenantId:D}/documents/{DocumentId:D}/versions/{VersionId:D}/docling/document.json");
         version.MarkPreprocessed();
         doc.MarkReady();
         return doc;
@@ -67,7 +70,7 @@ public sealed class ReprocessDocumentHandlerTests
         var handler = CreateHandler(fakes);
         var command = CreateCommand();
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(command).AsTask());
+        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() => handler.Handle(command).AsTask());
         Assert.Contains("not found", ex.Message);
     }
 
@@ -81,8 +84,8 @@ public sealed class ReprocessDocumentHandlerTests
         var handler = CreateHandler(fakes);
         var command = new ReprocessDocumentCommand(DocumentId, true, true, true, true, "corr-1");
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(command).AsTask());
-        Assert.Contains("does not belong to tenant", ex.Message);
+        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() => handler.Handle(command).AsTask());
+        Assert.Equal("The requested resource was not found.", ex.Message);
     }
 
     [Fact]
@@ -101,7 +104,7 @@ public sealed class ReprocessDocumentHandlerTests
         var handler = CreateHandler(fakes);
         var command = CreateCommand();
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(command).AsTask());
+        var ex = await Assert.ThrowsAsync<ResourceConflictException>(() => handler.Handle(command).AsTask());
         Assert.Contains("deleted", ex.Message.ToLower());
     }
 
@@ -115,7 +118,7 @@ public sealed class ReprocessDocumentHandlerTests
         var handler = CreateHandler(fakes);
         var command = CreateCommand();
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(command).AsTask());
+        var ex = await Assert.ThrowsAsync<ResourceConflictException>(() => handler.Handle(command).AsTask());
         Assert.Contains("already processing", ex.Message.ToLower());
     }
 
@@ -131,8 +134,8 @@ public sealed class ReprocessDocumentHandlerTests
         var handler = CreateHandler(fakes);
         var command = CreateCommand();
 
-        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(command).AsTask());
-        Assert.Contains("no version", ex.Message.ToLower());
+        var ex = await Assert.ThrowsAsync<ResourceConflictException>(() => handler.Handle(command).AsTask());
+        Assert.Equal("The document has no current version.", ex.Message);
     }
 
     // ── Status transition tests ─────────────────────────────────────
@@ -459,9 +462,16 @@ public sealed class ReprocessDocumentHandlerTests
         public Task AddAsync(Document document, CancellationToken ct = default) => Task.CompletedTask;
         public Task<Document?> GetByIdAsync(Guid tid, Guid did, CancellationToken ct = default) => Task.FromResult(_doc);
         public Task<Document?> GetByIdWithVersionsAsync(Guid tid, Guid did, CancellationToken ct = default) => Task.FromResult(_doc);
-        public Task<Document?> GetByIdForUpdateAsync(Guid tid, Guid did, CancellationToken ct = default) => Task.FromResult(_doc);
+        public Task<Document?> GetByIdForUpdateAsync(Guid tid, Guid did, CancellationToken ct = default) =>
+            Task.FromResult(_doc is not null && _doc.TenantId == tid && _doc.Id == did ? _doc : null);
         public Task<DocumentVersion?> GetVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) => Task.FromResult(_version);
-        public Task<DocumentVersion?> GetVersionForUpdateAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) => Task.FromResult(_version);
+        public Task<DocumentVersion?> GetVersionForUpdateAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) =>
+            Task.FromResult(_version is not null
+                            && _version.TenantId == tid
+                            && _version.DocumentId == did
+                            && _version.Id == vid
+                ? _version
+                : null);
         public Task<bool> ExistsAsync(Guid tid, Guid did, CancellationToken ct = default) => Task.FromResult(_doc is not null);
 
         public Task<DocumentListResult> ListAsync(Guid tid, int pn, int ps, string? sf, string? s, CancellationToken ct = default)

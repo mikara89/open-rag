@@ -70,6 +70,18 @@ public sealed class DocumentProcessingStepConfiguration : IEntityTypeConfigurati
             .IsRequired(false)
             .HasMaxLength(2000);
 
+        builder.HasOne<DocumentProcessingRun>()
+            .WithMany()
+            .HasForeignKey(s => new
+            {
+                s.TenantId,
+                s.DocumentId,
+                s.VersionId,
+                s.ProcessingRunId
+            })
+            .HasPrincipalKey(r => new { r.TenantId, r.DocumentId, r.VersionId, r.Id })
+            .OnDelete(DeleteBehavior.Cascade);
+
         // Indexes
         builder.HasIndex(s => new { s.TenantId, s.ProcessingRunId });
         builder.HasIndex(s => new { s.TenantId, s.DocumentId });

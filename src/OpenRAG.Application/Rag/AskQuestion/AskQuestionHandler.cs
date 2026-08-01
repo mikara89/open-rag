@@ -1,6 +1,8 @@
 using Mediator;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenRAG.Application.Abstractions.AI;
+using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Vector;
 using OpenRAG.Application.Common;
@@ -13,25 +15,31 @@ public sealed class AskQuestionHandler : IRequestHandler<AskQuestionQuery, AskQu
 {
     private readonly ICurrentTenant _currentTenant;
     private readonly IEmbeddingService _embeddingService;
+    private readonly IDocumentAuthorizationRepository _documentRepository;
     private readonly IVectorSearchService _vectorSearchService;
     private readonly IChatCompletionService _chatCompletionService;
     private readonly GenerateEmbeddingsOptions _embeddingOptions;
     private readonly RagOptions _ragOptions;
+    private readonly ILogger<AskQuestionHandler> _logger;
 
     public AskQuestionHandler(
         ICurrentTenant currentTenant,
+        IDocumentAuthorizationRepository documentRepository,
         IEmbeddingService embeddingService,
         IVectorSearchService vectorSearchService,
         IChatCompletionService chatCompletionService,
         IOptions<GenerateEmbeddingsOptions> embeddingOptions,
-        IOptions<RagOptions> ragOptions)
+        IOptions<RagOptions> ragOptions,
+        ILogger<AskQuestionHandler> logger)
     {
         _currentTenant = currentTenant;
+        _documentRepository = documentRepository;
         _embeddingService = embeddingService;
         _vectorSearchService = vectorSearchService;
         _chatCompletionService = chatCompletionService;
         _embeddingOptions = embeddingOptions.Value;
         _ragOptions = ragOptions.Value;
+        _logger = logger;
     }
 
     public async ValueTask<AskQuestionResponse> Handle(
@@ -41,27 +49,32 @@ public sealed class AskQuestionHandler : IRequestHandler<AskQuestionQuery, AskQu
         // 1. Validate
         if (string.IsNullOrWhiteSpace(query.Question))
         {
-            throw new AppException("Question cannot be empty.");
+            throw new RequestValidationException("Question cannot be empty.");
         }
 
         // Use query TopK if explicitly provided and valid, otherwise fall back to RagOptions default
         if (query.TopK.HasValue && query.TopK.Value <= 0)
         {
-            throw new AppException("TopK must be greater than zero.");
+            throw new RequestValidationException("TopK must be greater than zero.");
         }
 
         var effectiveTopK = query.TopK > 0 ? query.TopK.Value : _ragOptions.TopK;
 
         if (string.IsNullOrWhiteSpace(query.Model))
         {
-            throw new AppException("Model cannot be empty.");
+            throw new RequestValidationException("Model cannot be empty.");
         }
 
         var tenantId = _currentTenant.TenantId;
         if (tenantId == Guid.Empty)
         {
-            throw new AppException("TenantId cannot be empty.");
+            throw new IsolationViolationException("The trusted tenant context is empty.");
         }
+
+        var authorizedDocumentIds = await AuthorizeDocumentFilterAsync(
+            tenantId,
+            query.FilterDocumentIds,
+            cancellationToken);
 
         // 2. Generate embedding for the question (use configured embedding model, not chat model)
         var embeddingRequest = new EmbeddingRequest(
@@ -78,7 +91,7 @@ public sealed class AskQuestionHandler : IRequestHandler<AskQuestionQuery, AskQu
             TenantId: tenantId,
             QueryVector: embeddingResult.Vector.ToList(),
             Limit: effectiveTopK,
-            DocumentIds: query.FilterDocumentIds,
+            DocumentIds: authorizedDocumentIds,
             EmbeddingProvider: embeddingResult.Provider,
             EmbeddingModel: embeddingResult.Model,
             EmbeddingDimensions: embeddingResult.Dimensions,
@@ -91,8 +104,12 @@ public sealed class AskQuestionHandler : IRequestHandler<AskQuestionQuery, AskQu
         // 4. If no chunks found, return diagnostic answer
         if (searchResponse.Results.Count == 0)
         {
-            var noResultAnswer = searchResponse.DiagnosticMessage
-                ?? "I could not find relevant information in the indexed documents.";
+            _logger.LogDebug(
+                "RAG retrieval returned no validated chunks. TenantId={TenantId}, CorrelationId={CorrelationId}",
+                tenantId,
+                query.CorrelationId);
+            const string noResultAnswer =
+                "I could not find relevant information in the indexed documents.";
 
             return new AskQuestionResponse(
                 Answer: noResultAnswer,
@@ -103,6 +120,11 @@ public sealed class AskQuestionHandler : IRequestHandler<AskQuestionQuery, AskQu
         }
 
         var searchResults = searchResponse.Results;
+        ValidateSearchResults(
+            searchResults,
+            tenantId,
+            authorizedDocumentIds,
+            query.CorrelationId);
 
         // 5. Build retrieved chunk DTOs
         var retrievedChunks = searchResults.Select(r => new RagRetrievedChunkDto(
@@ -166,5 +188,73 @@ public sealed class AskQuestionHandler : IRequestHandler<AskQuestionQuery, AskQu
             RetrievedChunks: retrievedChunks,
             Model: query.Model,
             EstimatedCost: null);
+    }
+
+    private async Task<IReadOnlyCollection<Guid>?> AuthorizeDocumentFilterAsync(
+        Guid tenantId,
+        IReadOnlyCollection<Guid>? requestedDocumentIds,
+        CancellationToken cancellationToken)
+    {
+        if (requestedDocumentIds is null || requestedDocumentIds.Count == 0)
+            return null;
+
+        if (requestedDocumentIds.Any(id => id == Guid.Empty))
+            throw new RequestValidationException("Document IDs must be non-empty.");
+
+        var normalized = requestedDocumentIds.Distinct().ToArray();
+        if (normalized.Length > _ragOptions.MaxDocumentFilterIds)
+        {
+            throw new RequestValidationException(
+                $"At most {_ragOptions.MaxDocumentFilterIds} document IDs may be requested.");
+        }
+        var existing = await _documentRepository.GetExistingIdsAsync(
+            tenantId,
+            normalized,
+            cancellationToken);
+
+        if (existing.Count != normalized.Length
+            || normalized.Any(id => !existing.Contains(id)))
+        {
+            throw new ResourceNotFoundException();
+        }
+
+        return normalized;
+    }
+
+    private void ValidateSearchResults(
+        IReadOnlyList<VectorSearchResultItem> results,
+        Guid tenantId,
+        IReadOnlyCollection<Guid>? authorizedDocumentIds,
+        string correlationId)
+    {
+        var authorizedSet = authorizedDocumentIds?.ToHashSet();
+        var identities = new HashSet<(Guid TenantId, Guid DocumentId, Guid VersionId, Guid ChunkId)>();
+
+        foreach (var result in results)
+        {
+            var identity = (result.TenantId, result.DocumentId, result.VersionId, result.ChunkId);
+            var invalid = result.TenantId != tenantId
+                          || result.DocumentId == Guid.Empty
+                          || result.VersionId == Guid.Empty
+                          || result.ChunkId == Guid.Empty
+                          || (authorizedSet is not null && !authorizedSet.Contains(result.DocumentId))
+                          || !identities.Add(identity);
+
+            if (!invalid)
+                continue;
+
+            _logger.LogError(
+                "RAG isolation invariant failed before chat completion. " +
+                "TenantId={TenantId}, ResultTenantId={ResultTenantId}, DocumentId={DocumentId}, " +
+                "VersionId={VersionId}, ChunkId={ChunkId}, CorrelationId={CorrelationId}",
+                tenantId,
+                result.TenantId,
+                result.DocumentId,
+                result.VersionId,
+                result.ChunkId,
+                correlationId);
+            throw new IsolationViolationException(
+                "Vector retrieval returned a result outside the authorized scope.");
+        }
     }
 }

@@ -83,6 +83,8 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
             return NoOpResult(command, "ProcessingRunNotFound");
         }
 
+        EnsureRunScope(run, command);
+
         // 3. Load document — no-op gracefully if missing or deleted
         var document = await _documentRepository.GetByIdForUpdateAsync(
             tenantId, command.DocumentId, cancellationToken);
@@ -95,6 +97,9 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
             return NoOpResult(command, "DocumentNotFound");
         }
 
+        IsolationGuard.Equal(document.TenantId, command.TenantId, nameof(document.TenantId));
+        IsolationGuard.Equal(document.Id, command.DocumentId, nameof(document.Id));
+
         if (document.Status == DocumentStatus.Deleted)
         {
             _logger.LogWarning(
@@ -103,9 +108,26 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
             return NoOpResult(command, "DocumentDeleted");
         }
 
+        var version = await _documentRepository.GetVersionForUpdateAsync(
+            tenantId, command.DocumentId, command.VersionId, cancellationToken);
+        if (version is null)
+        {
+            _logger.LogWarning(
+                "Embedding no-op: Version not found. VersionId={VersionId}, CorrelationId={CorrelationId}",
+                command.VersionId, command.CorrelationId);
+            return NoOpResult(command, "VersionNotFound");
+        }
+
+        IsolationGuard.Equal(version.TenantId, command.TenantId, nameof(version.TenantId));
+        IsolationGuard.Equal(version.DocumentId, command.DocumentId, nameof(version.DocumentId));
+        IsolationGuard.Equal(version.Id, command.VersionId, nameof(version.Id));
+
         // 4. Check if GenerateEmbeddings step already completed (idempotency within same run)
         var existingStep = await _processingRunRepository.GetStepForUpdateAsync(
             tenantId, command.ProcessingRunId, DocumentProcessingStepName.GenerateEmbeddings, cancellationToken);
+
+        if (existingStep is not null)
+            EnsureStepScope(existingStep, command);
 
         if (existingStep is not null && existingStep.Status == DocumentProcessingStepStatus.Completed)
         {
@@ -127,6 +149,14 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
 
         if (chunks.Count == 0)
             throw new AppException($"No chunks found for version '{command.VersionId}'. Chunking must complete first.");
+
+        foreach (var chunk in chunks)
+        {
+            IsolationGuard.Equal(chunk.TenantId, tenantId, nameof(chunk.TenantId));
+            IsolationGuard.Equal(chunk.DocumentId, command.DocumentId, nameof(chunk.DocumentId));
+            IsolationGuard.Equal(chunk.VersionId, command.VersionId, nameof(chunk.VersionId));
+            IsolationGuard.NonEmpty(chunk.Id, nameof(chunk.Id));
+        }
 
         // 6. Clean up old embeddings before recreating (safe idempotency)
         await _documentEmbeddingRepository.DeleteByVersionAsync(
@@ -283,5 +313,27 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
             EmbeddingModel: string.Empty,
             EmbeddingDimensions: 0,
             Status: reason);
+    }
+
+    private static void EnsureRunScope(
+        DocumentProcessingRun run,
+        GenerateEmbeddingsCommand command)
+    {
+        IsolationGuard.Equal(run.TenantId, command.TenantId, nameof(run.TenantId));
+        IsolationGuard.Equal(run.DocumentId, command.DocumentId, nameof(run.DocumentId));
+        IsolationGuard.Equal(run.VersionId, command.VersionId, nameof(run.VersionId));
+    }
+
+    private static void EnsureStepScope(
+        DocumentProcessingStep step,
+        GenerateEmbeddingsCommand command)
+    {
+        IsolationGuard.Equal(step.TenantId, command.TenantId, nameof(step.TenantId));
+        IsolationGuard.Equal(step.DocumentId, command.DocumentId, nameof(step.DocumentId));
+        IsolationGuard.Equal(step.VersionId, command.VersionId, nameof(step.VersionId));
+        IsolationGuard.Equal(
+            step.ProcessingRunId,
+            command.ProcessingRunId,
+            nameof(step.ProcessingRunId));
     }
 }

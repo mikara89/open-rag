@@ -17,6 +17,7 @@ public sealed class UploadDocumentHandler : IRequestHandler<UploadDocumentComman
     private const long MaxFileSizeBytes = 100 * 1024 * 1024; // 100 MB
 
     private readonly IFileStorage _fileStorage;
+    private readonly IDocumentObjectKeyPolicy _objectKeyPolicy;
     private readonly IDocumentRepository _documentRepository;
     private readonly IProcessingRunRepository _processingRunRepository;
     private readonly IDocumentEventBus _eventBus;
@@ -27,6 +28,7 @@ public sealed class UploadDocumentHandler : IRequestHandler<UploadDocumentComman
 
     public UploadDocumentHandler(
         IFileStorage fileStorage,
+        IDocumentObjectKeyPolicy objectKeyPolicy,
         IDocumentRepository documentRepository,
         IProcessingRunRepository processingRunRepository,
         IDocumentEventBus eventBus,
@@ -36,6 +38,7 @@ public sealed class UploadDocumentHandler : IRequestHandler<UploadDocumentComman
         IUnitOfWork unitOfWork)
     {
         _fileStorage = fileStorage;
+        _objectKeyPolicy = objectKeyPolicy;
         _documentRepository = documentRepository;
         _processingRunRepository = processingRunRepository;
         _eventBus = eventBus;
@@ -56,17 +59,17 @@ public sealed class UploadDocumentHandler : IRequestHandler<UploadDocumentComman
 
         if (tenantId == Guid.Empty)
         {
-            throw new AppException("Current tenant ID is empty.");
+            throw new IsolationViolationException("The trusted tenant context is empty.");
         }
 
         if (userId == Guid.Empty)
         {
-            throw new AppException("Current user ID is empty.");
+            throw new IsolationViolationException("The trusted user context is empty.");
         }
 
         if (!_currentUser.IsAuthenticated)
         {
-            throw new AppException("User must be authenticated to upload documents.");
+            throw new IsolationViolationException("The upload handler received an unauthenticated user context.");
         }
 
         // 1. Generate IDs
@@ -76,7 +79,8 @@ public sealed class UploadDocumentHandler : IRequestHandler<UploadDocumentComman
 
         // 2. Build safe object key
         var safeFileName = Path.GetFileName(command.FileName);
-        var objectKey = $"tenants/{tenantId}/documents/{documentId}/versions/{versionId}/original/{safeFileName}";
+        var objectKey = _objectKeyPolicy.BuildSourceKey(
+            tenantId, documentId, versionId, safeFileName);
 
         // 3. Compute SHA-256 and save file
         string contentHash;
@@ -100,6 +104,17 @@ public sealed class UploadDocumentHandler : IRequestHandler<UploadDocumentComman
         // TODO: Add compensation/cleanup for object storage file if database transaction fails.
         var storedResult = await _fileStorage.SaveAsync(
             memoryStream, objectKey, command.ContentType, cancellationToken);
+        _objectKeyPolicy.EnsureOwned(
+            storedResult.ObjectKey,
+            tenantId,
+            documentId,
+            versionId,
+            DocumentObjectKind.Source);
+        if (!string.Equals(storedResult.ObjectKey, objectKey, StringComparison.Ordinal))
+        {
+            throw new IsolationViolationException(
+                "The storage provider returned a different source object key.");
+        }
 
         // 5. Begin database + CAP transaction
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
@@ -166,27 +181,27 @@ public sealed class UploadDocumentHandler : IRequestHandler<UploadDocumentComman
     {
         if (string.IsNullOrWhiteSpace(command.FileName))
         {
-            throw new AppException("File name cannot be empty.");
+            throw new RequestValidationException("File name cannot be empty.");
         }
 
         if (string.IsNullOrWhiteSpace(command.ContentType))
         {
-            throw new AppException("Content type cannot be empty.");
+            throw new RequestValidationException("Content type cannot be empty.");
         }
 
         if (command.SizeBytes <= 0)
         {
-            throw new AppException("File size must be greater than zero.");
+            throw new RequestValidationException("File size must be greater than zero.");
         }
 
         if (command.SizeBytes > MaxFileSizeBytes)
         {
-            throw new AppException($"File size exceeds maximum allowed size of {MaxFileSizeBytes / (1024 * 1024)} MB.");
+            throw new RequestValidationException($"File size exceeds maximum allowed size of {MaxFileSizeBytes / (1024 * 1024)} MB.");
         }
 
         if (command.Content is null)
         {
-            throw new AppException("Content stream cannot be null.");
+            throw new RequestValidationException("Content stream cannot be null.");
         }
     }
 }

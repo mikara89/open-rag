@@ -6,9 +6,9 @@ OpenRAG uses the ASP.NET Core JWT Bearer handler for authenticated API access. E
 
 OpenRAG is a resource server only. It does not implement users, passwords, login, registration, token issuance, refresh tokens, or authentication cookies. An external standards-compliant identity provider authenticates users and issues signed access tokens; OpenRAG validates those tokens.
 
-P0.3 extends the authentication foundation with trusted tenant resolution. The API accepts tenant identity only from the validated principal, using `tenant_id` by default. It has no tenant-selection header, query parameter, route value, request-body field, configured tenant value, or development fallback. See [trusted tenant resolution](16-trusted-tenant-resolution.md).
+P0.3 extends the authentication foundation with trusted tenant resolution. The API accepts tenant identity only from the validated principal, using `tenant_id` by default. It has no tenant-selection header, query parameter, route value, request-body field, configured tenant value, or development fallback. P0.4 uses that identity as the tenant-level resource boundary across repositories, storage, processing, vector retrieval, and RAG. See [trusted tenant resolution](16-trusted-tenant-resolution.md) and [authorization and retrieval isolation](17-authorization-and-isolation.md).
 
-> **Tenant resolution is not resource authorization.** P0.4 document authorization and isolation auditing and P0.5 adversarial cross-tenant integration infrastructure remain planned. OpenRAG is not yet production-safe for multitenant use.
+> The tenant is the current authorization boundary; `CreatedByUserId` remains audit metadata, not an ownership ACL. P0.5 live adversarial infrastructure remains planned, so OpenRAG is not yet production-safe for multitenant use.
 
 ## Authentication and authorization flow
 
@@ -102,4 +102,4 @@ Integration tests exercise the real JWT Bearer handler with an ephemeral test-on
 
 ## Remaining authorization work
 
-Trusted tenant resolution is complete. Full resource authorization, repository/storage/vector isolation auditing, and adversarial cross-tenant integration testing remain P0.4 and P0.5 work. Until those controls are complete, OpenRAG must not be deployed as a production multitenant system.
+Trusted tenant resolution and P0.4 code-level resource isolation are complete. Per-user ACLs are not implemented. P0.5 still must prove cross-tenant denial through real PostgreSQL/pgvector, object storage, API requests, and Worker processing before production multitenant deployment.

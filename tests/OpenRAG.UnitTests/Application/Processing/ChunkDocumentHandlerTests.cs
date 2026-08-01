@@ -67,6 +67,27 @@ public sealed class ChunkDocumentHandlerTests
         var response = await handler.Handle(cmd);
 
         Assert.Equal("VersionNotFound", response.Status);
+        Assert.False(fakes.FileStorage.ReadCalled);
+        Assert.False(fakes.Chunker.Called);
+        Assert.False(fakes.ChunkRepo.ChunksAdded);
+        Assert.Null(fakes.EventBus.LastEvent);
+        Assert.False(fakes.UnitOfWork.SaveChangesCalled);
+    }
+
+    [Fact]
+    public async Task Foreign_tenant_version_scope_performs_no_secondary_work()
+    {
+        var fakes = CreateFakes(versionMissing: true);
+
+        var response = await CreateHandler(fakes).Handle(
+            new ChunkDocumentCommand(TenantId, DocId, VerId, RunId, "foreign-scope"));
+
+        Assert.Equal("VersionNotFound", response.Status);
+        Assert.False(fakes.FileStorage.ReadCalled);
+        Assert.False(fakes.Chunker.Called);
+        Assert.False(fakes.ChunkRepo.ChunksAdded);
+        Assert.Null(fakes.EventBus.LastEvent);
+        Assert.False(fakes.UnitOfWork.SaveChangesCalled);
     }
 
     [Fact]
@@ -193,7 +214,8 @@ public sealed class ChunkDocumentHandlerTests
         return new ChunkDocumentHandler(
             fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo,
             fakes.RunRepo, fakes.FileStorage, fakes.Chunker, fakes.EventBus, fakes.Clock, fakes.UnitOfWork,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<ChunkDocumentHandler>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<ChunkDocumentHandler>.Instance,
+            new OpenRAG.Application.Storage.DocumentObjectKeyPolicy());
     }
 
     private static AllFakes CreateFakes(
@@ -221,10 +243,13 @@ public sealed class ChunkDocumentHandlerTests
     private static DocumentVersion CreateVersion(bool markdownMissing = false)
     {
         var version = DocumentVersion.Create(VerId, TenantId, DocId, 1,
-            "key", "application/pdf", 1024, "abc123");
+            $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/original/source.pdf",
+            "application/pdf", 1024, "abc123");
         if (!markdownMissing)
         {
-            version.AttachDoclingArtifacts("tenants/t/doc/v/md.md", "tenants/t/doc/v/json.json");
+            version.AttachDoclingArtifacts(
+                $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/docling/document.md",
+                $"tenants/{TenantId:D}/documents/{DocId:D}/versions/{VerId:D}/docling/document.json");
             version.MarkPreprocessed();
         }
         return version;

@@ -97,10 +97,8 @@ public sealed class OpenAiCompatibleChatCompletionService : IChatCompletionServi
 
         if (!response.IsSuccessStatusCode)
         {
-            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            var truncatedBody = errorBody.Length > 300 ? errorBody[..300] + "..." : errorBody;
             throw new AppException(
-                $"Chat completion returned HTTP {(int)response.StatusCode}: {truncatedBody}");
+                $"Chat completion returned HTTP {(int)response.StatusCode}.");
         }
 
         var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
