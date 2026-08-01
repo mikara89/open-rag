@@ -47,6 +47,19 @@ public sealed class JwtAuthenticationOptionsValidatorTests
         Assert.True(result.Succeeded);
     }
 
+    [Theory]
+    [InlineData("ftp://identity.example.invalid")]
+    [InlineData("file:///identity-metadata")]
+    [InlineData("ldap://identity.example.invalid")]
+    public void Rejects_unsupported_authority_scheme_when_https_metadata_is_disabled(string authority)
+    {
+        var options = ValidOptions();
+        options.Authority = authority;
+        options.RequireHttpsMetadata = false;
+
+        AssertInvalid(options, "must use HTTP or HTTPS");
+    }
+
     [Fact]
     public void Rejects_missing_audience()
     {

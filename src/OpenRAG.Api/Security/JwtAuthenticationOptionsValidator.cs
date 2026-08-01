@@ -20,12 +20,27 @@ public sealed class JwtAuthenticationOptionsValidator : IValidateOptions<JwtAuth
             failures.Add($"{JwtAuthenticationOptions.SectionName}:Authority must be an absolute URI.");
         }
 
-        if (authority is not null &&
-            options.RequireHttpsMetadata &&
-            !string.Equals(authority.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        if (authority is not null)
         {
-            failures.Add(
-                $"{JwtAuthenticationOptions.SectionName}:Authority must use HTTPS when RequireHttpsMetadata is true.");
+            var isHttp = string.Equals(
+                authority.Scheme,
+                Uri.UriSchemeHttp,
+                StringComparison.OrdinalIgnoreCase);
+            var isHttps = string.Equals(
+                authority.Scheme,
+                Uri.UriSchemeHttps,
+                StringComparison.OrdinalIgnoreCase);
+
+            if (!isHttp && !isHttps)
+            {
+                failures.Add(
+                    $"{JwtAuthenticationOptions.SectionName}:Authority must use HTTP or HTTPS.");
+            }
+            else if (options.RequireHttpsMetadata && !isHttps)
+            {
+                failures.Add(
+                    $"{JwtAuthenticationOptions.SectionName}:Authority must use HTTPS when RequireHttpsMetadata is true.");
+            }
         }
 
         if (string.IsNullOrWhiteSpace(options.Audience))

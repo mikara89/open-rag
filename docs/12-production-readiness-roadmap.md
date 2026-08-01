@@ -20,7 +20,7 @@ This is a production-oriented development baseline, not a production deployment.
 - **Objective:** Establish a supported authentication mechanism and trusted principal model for API requests.
 - **Acceptance criteria:** Authentication is required on protected endpoints; invalid or missing credentials are rejected; identity configuration and key rotation are documented and tested.
 - **Dependencies:** P0.1 trusted CI and an approved identity-provider design.
-- **Status:** Complete — JWT Bearer validation and policy enforcement protect every `/api` route; current-user mapping, administrator authorization, startup validation, OpenAPI metadata, and negative token cases are covered. The P0.2 validation run passed all 364 tests, dependency auditing, format checks, and documentation checks.
+- **Status:** Complete — JWT Bearer validation and policy enforcement protect every `/api` route; current-user mapping, administrator authorization, startup validation, OpenAPI metadata, and negative token cases are covered. The final P0.2 validation run passed all 367 tests, dependency auditing, format checks, and documentation checks.
 
 ### P0.3 — Trusted tenant resolution
 

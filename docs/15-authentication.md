@@ -27,14 +27,14 @@ Configuration section: `Authentication:Jwt`.
 
 | Setting | Required | Default | Contract |
 |---|---:|---|---|
-| `Authority` | Yes | none | Absolute identity-provider URI; must use HTTPS when HTTPS metadata is required |
+| `Authority` | Yes | none | Absolute HTTP(S) identity-provider URI; must use HTTPS when HTTPS metadata is required |
 | `Audience` | Yes | none | Expected access-token audience |
 | `RequireHttpsMetadata` | No | `true` | Keep `true` in production; `false` is only for isolated local development with an HTTP metadata endpoint |
 | `UserIdClaimType` | No | `sub` | Exactly one claim with this name must contain a non-empty GUID |
 | `RoleClaimType` | No | `role` | Claim used by role-based policies |
 | `ClockSkewSeconds` | No | `60` | Allowed clock skew from 0 through 300 seconds |
 
-Configuration is validated during startup with `IValidateOptions<T>`. The API fails fast when required values are absent, the Authority is not absolute, HTTPS policy is violated, claim names are blank, or clock skew is outside the allowed range.
+Configuration is validated during startup with `IValidateOptions<T>`. The API fails fast when required values are absent, the Authority is not an absolute HTTP(S) URI, HTTPS policy is violated, claim names are blank, or clock skew is outside the allowed range. Schemes such as FTP, file, and LDAP are rejected even when HTTPS metadata is explicitly disabled.
 
 Environment-variable names:
 

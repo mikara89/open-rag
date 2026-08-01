@@ -289,7 +289,7 @@ With pgvector-backed storage:
 MVP is accepted when all of the following pass:
 
 - [ ] **Build:** `dotnet build OpenRAG.slnx` — 0 errors
-- [ ] **Tests:** `dotnet test OpenRAG.slnx` — all tests pass (364 in the P0.2 validation run)
+- [ ] **Tests:** `dotnet test OpenRAG.slnx` — all tests pass (367 in the final P0.2 validation run)
 - [ ] **Format:** `dotnet format whitespace|style --verify-no-changes` — clean
 - [ ] **Authentication:** Missing and invalid tokens return 401; a valid token with a GUID user-ID claim is accepted
 - [ ] **Provider diagnostics:** `GET /api/system/providers` returns configured providers only for an administrator token
