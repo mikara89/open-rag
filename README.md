@@ -74,10 +74,13 @@ The `MigrateEmbeddingVectorToPgvector` EF migration changes the embedding column
 ## Quick validation
 
 ```bash
-# Same Release build, test/coverage, format, and documentation checks as GitHub CI
+# Same NuGet audit, Release build, test/coverage, format, and documentation checks as GitHub CI
 ./scripts/ci-local.ps1
 
-# Restore, Release build/test, TRX, coverage, and format checks
+# High/Critical NuGet vulnerability audit, including transitive dependencies
+./scripts/dependency-audit.ps1
+
+# Restore, NuGet audit, Release build/test, TRX, coverage, and format checks
 ./scripts/verify.ps1
 
 # Documentation only
@@ -87,4 +90,4 @@ The `MigrateEmbeddingVectorToPgvector` EF migration changes the embedding column
 ./scripts/mvp-smoke-test.ps1
 ```
 
-GitHub Actions runs the dependency-free checks for pull requests to `main` and pushes to `main`, then retains TRX test results and Cobertura coverage as separate artifacts. The live MVP smoke test is deliberately manual until CI has disposable service infrastructure.
+GitHub Actions runs dependency-free validation for pull requests to `main` and pushes to `main`, fails on High or Critical NuGet vulnerabilities (including transitive packages), and retains TRX test results and Cobertura coverage as separate artifacts. The live MVP smoke test is deliberately manual until CI has disposable service infrastructure.
