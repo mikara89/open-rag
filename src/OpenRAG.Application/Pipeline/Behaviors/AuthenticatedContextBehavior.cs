@@ -1,4 +1,5 @@
 using Mediator;
+using Microsoft.Extensions.Logging;
 using OpenRAG.Application.Abstractions.Security;
 
 namespace OpenRAG.Application.Pipeline.Behaviors;
@@ -12,29 +13,55 @@ public sealed class AuthenticatedContextBehavior<TMessage, TResponse>
 
     private readonly ICurrentUser _currentUser;
     private readonly ICurrentTenant _currentTenant;
+    private readonly ILogger<AuthenticatedContextBehavior<TMessage, TResponse>> _logger;
 
     public AuthenticatedContextBehavior(
         ICurrentUser currentUser,
-        ICurrentTenant currentTenant)
+        ICurrentTenant currentTenant,
+        ILogger<AuthenticatedContextBehavior<TMessage, TResponse>> logger)
     {
         _currentUser = currentUser;
         _currentTenant = currentTenant;
+        _logger = logger;
     }
 
-    public ValueTask<TResponse> Handle(
+    public async ValueTask<TResponse> Handle(
         TMessage message,
         MessageHandlerDelegate<TMessage, TResponse> next,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!_currentUser.IsAuthenticated
-            || _currentUser.UserId == Guid.Empty
-            || _currentTenant.TenantId == Guid.Empty)
+        Guid userId;
+        Guid tenantId;
+
+        try
+        {
+            if (!_currentUser.IsAuthenticated)
+                throw new UnauthorizedAccessException(ContextRequiredMessage);
+
+            userId = _currentUser.UserId;
+            tenantId = _currentTenant.TenantId;
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new UnauthorizedAccessException(
+                ContextRequiredMessage,
+                exception);
+        }
+
+        if (userId == Guid.Empty || tenantId == Guid.Empty)
         {
             throw new UnauthorizedAccessException(ContextRequiredMessage);
         }
 
-        return next(message, cancellationToken);
+        using var scope = _logger.BeginScope(
+            new Dictionary<string, object?>
+            {
+                ["UserId"] = userId,
+                ["TenantId"] = tenantId
+            });
+
+        return await next(message, cancellationToken);
     }
 }

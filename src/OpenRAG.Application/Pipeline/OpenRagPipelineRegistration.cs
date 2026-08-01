@@ -19,9 +19,6 @@ public static class OpenRagPipelineRegistration
         services.AddScoped(
             typeof(IPipelineBehavior<,>),
             typeof(TelemetryBehavior<,>));
-        services.AddScoped(
-            typeof(IPipelineBehavior<,>),
-            typeof(LoggingScopeBehavior<,>));
 
         switch (host)
         {
@@ -29,9 +26,15 @@ public static class OpenRagPipelineRegistration
                 services.AddScoped(
                     typeof(IPipelineBehavior<,>),
                     typeof(AuthenticatedContextBehavior<,>));
+                services.AddScoped(
+                    typeof(IPipelineBehavior<,>),
+                    typeof(LoggingScopeBehavior<,>));
                 break;
 
             case OpenRagPipelineHost.Worker:
+                services.AddScoped(
+                    typeof(IPipelineBehavior<,>),
+                    typeof(LoggingScopeBehavior<,>));
                 services.AddScoped(
                     typeof(IPipelineBehavior<,>),
                     typeof(ExplicitTenantMessageBehavior<,>));

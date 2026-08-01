@@ -85,7 +85,7 @@ Every `/api` endpoint requires a validated JWT Bearer token. The default user-ID
 
 The tenant is the current resource-authorization boundary: any authenticated user with a valid trusted tenant claim may operate on that tenant's resources. `CreatedByUserId` is audit metadata, not a per-user ownership ACL. Document/version/chunk reads are explicitly tenant-scoped; persisted object keys are validated against tenant/document/version ownership; pgvector queries parameterize and apply the tenant, optional document filter, embedding compatibility, and full chunk relationship; RAG validates filters before embedding and retrieved identities before any LLM call. See [authorization and retrieval isolation](docs/17-authorization-and-isolation.md).
 
-> **P0.4.1 Mediator pipeline foundation is complete; the broader P0.4 phase remains in progress.** Pipelines provide narrow primitive validation, trusted context guards, logging scopes, and application activities. Resource authorization, storage/vector isolation, transactions, and HTTP error mapping remain explicit outside generic behaviors. P0.5 still requires disposable live infrastructure tests.
+> **P0.4 authorization and retrieval isolation and the later P0.4.1 Mediator pipeline foundation are complete.** Pipelines provide narrow primitive validation, trusted context guards, logging scopes, and application activities. Resource authorization, storage/vector isolation, transactions, and HTTP error mapping remain explicit outside generic behaviors. P0.5 cross-tenant live integration tests remain planned and still require disposable infrastructure.
 
 ## Quick validation
 

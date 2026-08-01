@@ -132,9 +132,11 @@ public sealed class MediatorPipelineBehaviorTests
     [Fact]
     public async Task Authenticated_context_executes_handler_for_valid_user_and_tenant()
     {
+        var logger = new ScopeCapturingLogger<AuthenticatedContextBehavior<AuthenticatedTestCommand, string>>();
         var behavior = new AuthenticatedContextBehavior<AuthenticatedTestCommand, string>(
             new StubCurrentUser(UserId, true),
-            new StubCurrentTenant(TenantId));
+            new StubCurrentTenant(TenantId),
+            logger);
         var calls = 0;
 
         await behavior.Handle(
@@ -147,6 +149,9 @@ public sealed class MediatorPipelineBehaviorTests
             CancellationToken.None);
 
         Assert.Equal(1, calls);
+        var scope = Assert.Single(logger.Scopes);
+        Assert.Equal(UserId, scope["UserId"]);
+        Assert.Equal(TenantId, scope["TenantId"]);
     }
 
     [Theory]
@@ -158,9 +163,11 @@ public sealed class MediatorPipelineBehaviorTests
         bool emptyUser,
         bool emptyTenant)
     {
+        var logger = new ScopeCapturingLogger<AuthenticatedContextBehavior<AuthenticatedTestCommand, string>>();
         var behavior = new AuthenticatedContextBehavior<AuthenticatedTestCommand, string>(
             new StubCurrentUser(emptyUser ? Guid.Empty : UserId, authenticated),
-            new StubCurrentTenant(emptyTenant ? Guid.Empty : TenantId));
+            new StubCurrentTenant(emptyTenant ? Guid.Empty : TenantId),
+            logger);
         var calls = 0;
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(
@@ -174,6 +181,7 @@ public sealed class MediatorPipelineBehaviorTests
                 CancellationToken.None).AsTask());
 
         Assert.Equal(0, calls);
+        Assert.Empty(logger.Scopes);
     }
 
     [Fact]
@@ -285,14 +293,10 @@ public sealed class MediatorPipelineBehaviorTests
     }
 
     [Fact]
-    public async Task Logging_scope_contains_authenticated_context_without_serializing_message()
+    public async Task Logging_scope_contains_only_safe_message_metadata()
     {
-        var services = new ServiceCollection();
-        services.AddSingleton<ICurrentUser>(new StubCurrentUser(UserId, true));
-        services.AddSingleton<ICurrentTenant>(new StubCurrentTenant(TenantId));
-        using var provider = services.BuildServiceProvider();
         var logger = new ScopeCapturingLogger<LoggingScopeBehavior<AuthenticatedCorrelatedCommand, string>>();
-        var behavior = new LoggingScopeBehavior<AuthenticatedCorrelatedCommand, string>(provider, logger);
+        var behavior = new LoggingScopeBehavior<AuthenticatedCorrelatedCommand, string>(logger);
         var message = new AuthenticatedCorrelatedCommand("corr-auth", "sensitive-question");
 
         await behavior.Handle(
@@ -304,17 +308,16 @@ public sealed class MediatorPipelineBehaviorTests
         Assert.Equal(nameof(AuthenticatedCorrelatedCommand), scope["MessageType"]);
         Assert.Equal("command", scope["MessageCategory"]);
         Assert.Equal("corr-auth", scope["CorrelationId"]);
-        Assert.Equal(UserId, scope["UserId"]);
-        Assert.Equal(TenantId, scope["TenantId"]);
+        Assert.DoesNotContain("UserId", scope.Keys);
+        Assert.DoesNotContain("TenantId", scope.Keys);
         Assert.DoesNotContain(message.SensitiveValue, scope.Values);
     }
 
     [Fact]
-    public async Task Logging_scope_uses_explicit_worker_tenant_without_resolving_http_context()
+    public async Task Logging_scope_leaves_worker_tenant_to_explicit_tenant_guard()
     {
-        using var provider = new ServiceCollection().BuildServiceProvider();
         var logger = new ScopeCapturingLogger<LoggingScopeBehavior<WorkerTestCommand, string>>();
-        var behavior = new LoggingScopeBehavior<WorkerTestCommand, string>(provider, logger);
+        var behavior = new LoggingScopeBehavior<WorkerTestCommand, string>(logger);
         var message = new WorkerTestCommand(TenantId, "corr-worker", "sensitive-content");
 
         await behavior.Handle(
@@ -323,11 +326,9 @@ public sealed class MediatorPipelineBehaviorTests
             CancellationToken.None);
 
         var scope = Assert.Single(logger.Scopes);
-        Assert.Equal(TenantId, scope["TenantId"]);
         Assert.Equal("corr-worker", scope["CorrelationId"]);
+        Assert.DoesNotContain("TenantId", scope.Keys);
         Assert.DoesNotContain(message.SensitiveValue, scope.Values);
-        Assert.Null(provider.GetService<ICurrentUser>());
-        Assert.Null(provider.GetService<ICurrentTenant>());
     }
 
     [Theory]
@@ -345,14 +346,23 @@ public sealed class MediatorPipelineBehaviorTests
             .Where(descriptor => descriptor.ServiceType == typeof(IPipelineBehavior<,>))
             .Select(descriptor => descriptor.ImplementationType)
             .ToArray();
-        Assert.Equal(
-        [
-            typeof(TelemetryBehavior<,>),
-            typeof(LoggingScopeBehavior<,>),
-            contextBehavior,
-            typeof(ValidationBehavior<,>)
-        ],
-            behaviorTypes);
+        var expected = host == OpenRagPipelineHost.Api
+            ? new Type[]
+            {
+                typeof(TelemetryBehavior<,>),
+                contextBehavior,
+                typeof(LoggingScopeBehavior<,>),
+                typeof(ValidationBehavior<,>)
+            }
+            :
+            [
+                typeof(TelemetryBehavior<,>),
+                typeof(LoggingScopeBehavior<,>),
+                contextBehavior,
+                typeof(ValidationBehavior<,>)
+            ];
+
+        Assert.Equal(expected, behaviorTypes);
         Assert.All(
             services.Where(descriptor => descriptor.ServiceType == typeof(IPipelineBehavior<,>)),
             descriptor => Assert.Equal(ServiceLifetime.Scoped, descriptor.Lifetime));
@@ -369,9 +379,9 @@ public sealed class MediatorPipelineBehaviorTests
         services.AddScoped<IPipelineBehavior<GenerateEmbeddingsCommand, GenerateEmbeddingsResponse>>(
             _ => new RecordingBehavior("telemetry", order));
         services.AddScoped<IPipelineBehavior<GenerateEmbeddingsCommand, GenerateEmbeddingsResponse>>(
-            _ => new RecordingBehavior("logging", order));
-        services.AddScoped<IPipelineBehavior<GenerateEmbeddingsCommand, GenerateEmbeddingsResponse>>(
             _ => new RecordingBehavior("context", order));
+        services.AddScoped<IPipelineBehavior<GenerateEmbeddingsCommand, GenerateEmbeddingsResponse>>(
+            _ => new RecordingBehavior("logging", order));
         services.AddScoped<IPipelineBehavior<GenerateEmbeddingsCommand, GenerateEmbeddingsResponse>>(
             _ => new RecordingBehavior("validation", order));
         using var provider = services.BuildServiceProvider();
@@ -389,13 +399,13 @@ public sealed class MediatorPipelineBehaviorTests
         Assert.Equal(
         [
             "telemetry-before",
-            "logging-before",
             "context-before",
+            "logging-before",
             "validation-before",
             "handler",
             "validation-after",
-            "context-after",
             "logging-after",
+            "context-after",
             "telemetry-after"
         ],
             order);

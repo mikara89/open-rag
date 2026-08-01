@@ -29,21 +29,21 @@ This is a production-oriented development baseline, not a production deployment.
 - **Dependencies:** P0.2 authentication foundation.
 - **Status:** Complete — HTTP tenant identity is resolved only from exactly one validated non-empty GUID JWT claim; request spoofing cannot override it; the development fallback is removed; CAP events and Worker commands preserve tenant context explicitly. The final P0.3 validation run passed all 403 tests, dependency auditing, format checks, and documentation checks.
 
-> Trusted tenant resolution is complete. P0.4.1 establishes the Mediator pipeline foundation; the broader P0.4 authorization/isolation phase remains in progress. P0.5 live adversarial infrastructure remains planned.
-
-### P0.4.1 — Mediator pipeline foundation
-
-- **Objective:** Add narrow, reusable message validation, trusted execution-context guards, structured logging scopes, and application telemetry without hiding P0.4 resource authorization or persistence isolation.
-- **Acceptance criteria:** Every request is classified; API and Worker context contracts remain separate; validators short-circuit deterministically; safe telemetry and scope metadata are tested; host composition and actual Mediator wrapping order are proven.
-- **Dependencies:** Active P0.4 authorization branch and existing scoped Mediator 3.0.2 composition.
-- **Status:** Complete — 17 requests have explicit command/query categories, 16 primitive validators are registered, API and Worker use separate context guards, and the tested order is telemetry → logging → context → validation → handler. No resource authorization, transactions, CAP behavior, or HTTP exception mapping moved into pipelines.
+> Trusted tenant resolution and P0.4 code-level authorization/isolation are complete. The later P0.4.1 architectural improvement is also complete. P0.5 live adversarial infrastructure remains planned.
 
 ### P0.4 — Authorization and retrieval isolation
 
 - **Objective:** Enforce authorization and tenant isolation across document lifecycle, storage, processing, vector retrieval, and RAG responses.
 - **Acceptance criteria:** Every protected operation applies policy and tenant filters; storage and vector queries cannot cross tenants; denial behavior is consistent and audited.
 - **Dependencies:** P0.2 authentication foundation and P0.3 trusted tenant resolution.
-- **Status:** In progress — Tenant-level authorization remains explicit through repository contracts, complete nested-resource validation, canonical object-key ownership, tenant-inclusive database relationships, parameterized pgvector retrieval, RAG filter preauthorization, and fail-closed result validation before LLM calls. P0.4.1 adds only narrow cross-cutting pipelines; final P0.4 review and acceptance remain separate from P0.5 live infrastructure proof.
+- **Status:** Complete — Tenant-level authorization is enforced through explicit repository contracts, complete nested-resource validation, canonical object-key ownership, tenant-inclusive database relationships, parameterized pgvector retrieval, RAG filter preauthorization, and fail-closed result validation before LLM calls. Typed Problem Details and focused unit, architecture, model, and dependency-free integration tests cover denial behavior. P0.5 live infrastructure remains separate.
+
+### P0.4.1 — Mediator pipeline foundation
+
+- **Objective:** Add narrow, reusable message validation, trusted execution-context guards, structured logging scopes, and application telemetry as a later architectural improvement without hiding completed P0.4 resource authorization or persistence isolation.
+- **Acceptance criteria:** Every request is classified; API and Worker context contracts remain separate; validators short-circuit deterministically; safe telemetry and scope metadata are tested; host composition and actual Mediator wrapping order are proven.
+- **Dependencies:** Completed P0.4 authorization/isolation foundation and existing scoped Mediator 3.0.2 composition.
+- **Status:** Complete — 17 requests have explicit command/query categories and 16 primitive validators. The API order is telemetry → authenticated context → logging → validation → handler; invalid production context accessors are normalized before logging. The Worker order remains telemetry → logging → explicit tenant → validation → handler. No resource authorization, transactions, CAP behavior, or HTTP exception mapping moved into pipelines.
 
 ### P0.5 — Cross-tenant security integration tests
 

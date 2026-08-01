@@ -14,19 +14,19 @@ The existing P0.4 authorization design intentionally keeps resource decisions vi
 
 Classify every application request explicitly as an OpenRAG command or query. HTTP-originated messages additionally implement `IAuthenticatedApplicationMessage`; Worker processing commands implement `IExplicitTenantMessage` and continue to carry `TenantId` explicitly. Correlated messages implement `ICorrelatedMessage`.
 
-Register scoped Mediator behaviors explicitly in this wrapping order:
+Register scoped Mediator behaviors explicitly. The API wrapping order validates trusted context before any generic logging scope can access application work:
 
 ```text
 1. Telemetry
-2. Structured logging scope
-3. Authenticated API context or explicit Worker tenant guard
+2. Authenticated API context
+3. Structured logging scope
 4. Primitive message validation
 5. Handler
 ```
 
-The reverse order applies while the stack unwinds. A test using the repository's actual Mediator version proves this behavior rather than assuming container ordering.
+The Worker wrapping order is telemetry, structured logging scope, explicit Worker tenant guard, primitive validation, then handler. The reverse order applies while each stack unwinds. Tests using the repository's actual Mediator version prove wrapping behavior rather than assuming container ordering.
 
-The API context behavior uses `ICurrentUser` and `ICurrentTenant`. It is defense in depth behind endpoint authentication and authorization policies and does not inspect claims. The Worker behavior uses only the immutable tenant carried by its message, never an HTTP or ambient tenant context.
+The API context behavior uses `ICurrentUser` and `ICurrentTenant`. It is defense in depth behind endpoint authentication and authorization policies and does not inspect claims. It normalizes invalid production context accessors to `UnauthorizedAccessException` and creates the trusted user/tenant logging scope only after validation. The generic logging behavior adds message type, category, and correlation only; it does not resolve security context. The Worker behavior uses only the immutable tenant carried by its message, never an HTTP or ambient tenant context, and owns the Worker tenant scope.
 
 Use small `IMessageValidator<TMessage>` implementations for dependency-free primitive shape rules. Validators execute in registration order, stop at the first failure, propagate cancellation, and throw the existing `RequestValidationException`. They do not query resource state.
 
