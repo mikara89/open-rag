@@ -3,12 +3,22 @@
 # For the comprehensive MVP smoke test, run: ./scripts/mvp-smoke-test.ps1
 param(
     [string]$ApiBaseUrl = "https://localhost:7063",
+    [string]$Token = $env:OPENRAG_ACCESS_TOKEN,
     [string]$FilePath = "README.md",
     [string]$Question = "What is OpenRAG about?",
     [string]$Model = "mock-chat"
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($Token)) {
+    throw "A JWT access token with valid user and tenant claims is required."
+}
+
+$authorizationHeaders = @{
+    Authorization = "Bearer $Token"
+}
+
 $uploadUrl = "$ApiBaseUrl/api/documents/upload"
 $statusUrlTemplate = "$ApiBaseUrl/api/documents/{0}/status"
 $reprocessUrlTemplate = "$ApiBaseUrl/api/documents/{0}/reprocess"
@@ -34,7 +44,7 @@ $fileContent = [System.Net.Http.ByteArrayContent]::new($fileBytes)
 $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/octet-stream")
 $form['file'].Add($fileContent, "file", (Split-Path $FilePath -Leaf))
 
-$uploadResponse = Invoke-RestMethod -Uri $uploadUrl -Method Post -Form $form -SkipCertificateCheck
+$uploadResponse = Invoke-RestMethod -Uri $uploadUrl -Method Post -Form $form -Headers $authorizationHeaders -SkipCertificateCheck
 $documentId = $uploadResponse.documentId
 Write-Host "  DocumentId: $documentId" -ForegroundColor Green
 
@@ -46,7 +56,7 @@ $waited = 0
 do {
     Start-Sleep -Seconds 2
     $waited += 2
-    $status = Invoke-RestMethod -Uri $statusUrl -Method Get -SkipCertificateCheck
+    $status = Invoke-RestMethod -Uri $statusUrl -Method Get -Headers $authorizationHeaders -SkipCertificateCheck
     Write-Host "  Status: $($status.status) (${waited}s)" -ForegroundColor DarkGray
 } while ($status.status -ne "Ready" -and $status.status -ne "Failed" -and $waited -lt $maxWait)
 
@@ -64,7 +74,7 @@ $askBody = @{
     model = $Model
 } | ConvertTo-Json
 
-$answer1 = Invoke-RestMethod -Uri $ragUrl -Method Post -Body $askBody -ContentType "application/json" -SkipCertificateCheck
+$answer1 = Invoke-RestMethod -Uri $ragUrl -Method Post -Body $askBody -ContentType "application/json" -Headers $authorizationHeaders -SkipCertificateCheck
 Write-Host "  Answer: $($answer1.answer.Substring(0, [Math]::Min(80, $answer1.answer.Length)))..." -ForegroundColor Green
 
 # 4. Reprocess
@@ -76,7 +86,7 @@ $reprocessBody = @{
     forceEmbeddings = $true
 } | ConvertTo-Json
 
-$reprocessResponse = Invoke-RestMethod -Uri $reprocessUrl -Method Post -Body $reprocessBody -ContentType "application/json" -SkipCertificateCheck
+$reprocessResponse = Invoke-RestMethod -Uri $reprocessUrl -Method Post -Body $reprocessBody -ContentType "application/json" -Headers $authorizationHeaders -SkipCertificateCheck
 Write-Host "  Status: $($reprocessResponse.status)" -ForegroundColor Yellow
 Write-Host "  VersionId: $($reprocessResponse.versionId)" -ForegroundColor Yellow
 Write-Host "  CorrelationId: $($reprocessResponse.correlationId)" -ForegroundColor Yellow
@@ -92,7 +102,7 @@ $waited = 0
 do {
     Start-Sleep -Seconds 2
     $waited += 2
-    $status = Invoke-RestMethod -Uri $statusUrl -Method Get -SkipCertificateCheck
+    $status = Invoke-RestMethod -Uri $statusUrl -Method Get -Headers $authorizationHeaders -SkipCertificateCheck
     Write-Host "  Status: $($status.status) (${waited}s)" -ForegroundColor DarkGray
 } while ($status.status -ne "Ready" -and $status.status -ne "Failed" -and $waited -lt $maxWait)
 
@@ -104,7 +114,7 @@ Write-Host "  Document is Ready again" -ForegroundColor Green
 
 # 6. Ask question again
 Write-Host "[6/6] Asking question (post-reprocess)..." -ForegroundColor Yellow
-$answer2 = Invoke-RestMethod -Uri $ragUrl -Method Post -Body $askBody -ContentType "application/json" -SkipCertificateCheck
+$answer2 = Invoke-RestMethod -Uri $ragUrl -Method Post -Body $askBody -ContentType "application/json" -Headers $authorizationHeaders -SkipCertificateCheck
 Write-Host "  Answer: $($answer2.answer.Substring(0, [Math]::Min(80, $answer2.answer.Length)))..." -ForegroundColor Green
 
 Write-Host ""
