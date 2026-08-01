@@ -4,7 +4,7 @@
 
 The tenant is the current resource-authorization boundary. Any authenticated user with a valid trusted tenant claim may operate on resources belonging to that tenant. `CreatedByUserId` is audit metadata only; it is not a document-owner ACL.
 
-P0.4 does not add users, memberships, invitations, sharing, document ACLs, or per-user ownership restrictions. Provider diagnostics remains administrator-only. P0.5 remains responsible for live adversarial tests using disposable PostgreSQL/pgvector, object storage, API, and Worker infrastructure.
+P0.4 does not add users, memberships, invitations, sharing, document ACLs, or per-user ownership restrictions. Provider diagnostics remains administrator-only. P0.4.1's Mediator pipelines validate only primitive message shape and trusted execution context; every resource authorization and isolation check documented here remains explicit in its handler, repository, storage, vector, or RAG boundary. The broader P0.4 phase remains in progress, and P0.5 remains responsible for live adversarial tests using disposable PostgreSQL/pgvector, object storage, API, and Worker infrastructure.
 
 ## Denial contract
 

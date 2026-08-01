@@ -1,4 +1,4 @@
-using Mediator;
+using OpenRAG.Application.Pipeline;
 
 namespace OpenRAG.Application.Processing.GenerateEmbeddings;
 
@@ -8,7 +8,9 @@ public sealed record GenerateEmbeddingsCommand(
     Guid VersionId,
     Guid ProcessingRunId,
     string CorrelationId
-) : IRequest<GenerateEmbeddingsResponse>;
+) : IOpenRagCommand<GenerateEmbeddingsResponse>,
+    IExplicitTenantMessage,
+    ICorrelatedMessage;
 
 public sealed record GenerateEmbeddingsResponse(
     Guid DocumentId,

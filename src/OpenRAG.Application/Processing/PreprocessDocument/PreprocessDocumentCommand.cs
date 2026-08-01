@@ -1,4 +1,4 @@
-using Mediator;
+using OpenRAG.Application.Pipeline;
 
 namespace OpenRAG.Application.Processing.PreprocessDocument;
 
@@ -16,4 +16,6 @@ public sealed record PreprocessDocumentCommand(
     Guid VersionId,
     Guid ProcessingRunId,
     string CorrelationId
-) : IRequest<PreprocessDocumentResponse>;
+) : IOpenRagCommand<PreprocessDocumentResponse>,
+    IExplicitTenantMessage,
+    ICorrelatedMessage;

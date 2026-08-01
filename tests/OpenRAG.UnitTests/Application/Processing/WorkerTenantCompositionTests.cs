@@ -3,6 +3,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OpenRAG.Application;
 using OpenRAG.Application.Abstractions.Security;
+using OpenRAG.Application.Pipeline;
+using OpenRAG.Application.Pipeline.Behaviors;
+using OpenRAG.Application.Processing.PreprocessDocument;
 using OpenRAG.Infrastructure;
 using OpenRAG.Worker.Consumers;
 
@@ -27,6 +30,7 @@ public sealed class WorkerTenantCompositionTests
         services.AddApplication();
         services.AddInfrastructure(configuration);
         services.AddMediator(options => options.ServiceLifetime = ServiceLifetime.Scoped);
+        services.AddOpenRagMediatorPipelines(OpenRagPipelineHost.Worker);
         services.AddTransient<DocumentPreprocessRequestedConsumer>();
         services.AddTransient<DocumentChunkingRequestedConsumer>();
         services.AddTransient<DocumentIntelligenceRequestedConsumer>();
@@ -36,6 +40,11 @@ public sealed class WorkerTenantCompositionTests
         using var scope = provider.CreateScope();
 
         Assert.Null(scope.ServiceProvider.GetService<ICurrentTenant>());
+        Assert.Null(scope.ServiceProvider.GetService<ICurrentUser>());
+        Assert.Contains(
+            scope.ServiceProvider.GetServices<IPipelineBehavior<PreprocessDocumentCommand, PreprocessDocumentResponse>>(),
+            behavior => behavior is ExplicitTenantMessageBehavior<PreprocessDocumentCommand, PreprocessDocumentResponse>);
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IRequestHandler<PreprocessDocumentCommand, PreprocessDocumentResponse>>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<DocumentPreprocessRequestedConsumer>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<DocumentChunkingRequestedConsumer>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<DocumentIntelligenceRequestedConsumer>());

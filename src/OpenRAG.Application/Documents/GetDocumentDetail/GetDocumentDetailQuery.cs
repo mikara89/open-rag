@@ -1,10 +1,10 @@
-using Mediator;
+using OpenRAG.Application.Pipeline;
 
 namespace OpenRAG.Application.Documents.GetDocumentDetail;
 
 public sealed record GetDocumentDetailQuery(
     Guid DocumentId
-) : IRequest<GetDocumentDetailResponse>;
+) : IOpenRagQuery<GetDocumentDetailResponse>, IAuthenticatedApplicationMessage;
 
 public sealed record GetDocumentDetailResponse(
     Guid DocumentId,

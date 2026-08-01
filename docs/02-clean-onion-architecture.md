@@ -139,6 +139,8 @@ public interface ICurrentUser {}
 public interface IClock {}
 ```
 
+Application messages are explicitly classified as commands or queries. Scoped Mediator pipeline behaviors provide primitive shape validation, safe tracing, structured scopes, and separate API/Worker context guards. They do not own resource authorization, repository predicates, storage ownership, vector/RAG isolation, transaction boundaries, CAP semantics, or HTTP exception mapping. See [ADR 0004](adr/0004-use-mediator-pipelines-for-narrow-cross-cutting-concerns.md).
+
 ## Infrastructure layer
 
 Contains implementations:
