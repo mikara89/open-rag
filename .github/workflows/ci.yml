@@ -67,7 +67,7 @@ jobs:
         with:
           name: openrag-test-results
           path: artifacts/test-results/**/*.trx
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
 
       - name: Upload code coverage
@@ -76,7 +76,7 @@ jobs:
         with:
           name: openrag-code-coverage
           path: artifacts/test-results/*/coverage.cobertura.xml
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
 
       - name: Verify whitespace formatting
