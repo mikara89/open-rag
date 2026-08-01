@@ -11,6 +11,7 @@ public sealed record PreprocessDocumentResponse(
 );
 
 public sealed record PreprocessDocumentCommand(
+    Guid TenantId,
     Guid DocumentId,
     Guid VersionId,
     Guid ProcessingRunId,

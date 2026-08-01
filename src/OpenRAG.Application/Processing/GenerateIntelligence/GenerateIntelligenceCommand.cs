@@ -3,6 +3,7 @@ using Mediator;
 namespace OpenRAG.Application.Processing.GenerateIntelligence;
 
 public sealed record GenerateIntelligenceCommand(
+    Guid TenantId,
     Guid DocumentId,
     Guid VersionId,
     Guid ProcessingRunId,

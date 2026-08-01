@@ -25,14 +25,14 @@ Never include real secrets, API keys, access tokens, connection strings, custome
 
 ## Current security limitations
 
-- JWT Bearer authentication protects every `/api` endpoint. Validated tokens must contain exactly one non-empty GUID user-ID claim (`sub` by default).
+- JWT Bearer authentication protects every `/api` endpoint. Validated tokens must contain exactly one non-empty GUID user-ID claim (`sub` by default) and exactly one non-empty GUID tenant claim (`tenant_id` by default).
 - `GET /api/system/providers` additionally requires the administrator role (`admin` by default).
 - The Development-only OpenAPI document remains anonymous at `/openapi/v1.json`; it is not mapped outside Development.
-- Tenant resolution is still development-only and is not rooted in the authenticated principal. `DevelopmentCurrentTenant` remains registered, and `/api/rag/ask` still accepts request-supplied tenant selection.
-- Document-level authorization and production-grade tenant isolation are not complete. Authentication must not be interpreted as production-safe multitenancy.
+- Tenant identity is resolved exclusively from the validated JWT claim by the API. Request headers, query strings, route values, bodies, and application configuration cannot select or override the tenant; no development fallback exists. Workers preserve the tenant explicitly through CAP events and processing commands.
+- Trusted tenant resolution does not grant resource access. Document-level authorization, exhaustive repository/storage/vector isolation auditing, and adversarial cross-tenant integration tests remain P0.4 and P0.5 work. Authentication and tenant resolution must not be interpreted as production-safe multitenancy.
 - The project has not completed production security hardening and must not be treated as production-ready.
 
-Authentication configuration, claim contracts, 401/403 behavior, and secret-handling expectations are documented in [docs/15-authentication.md](docs/15-authentication.md). Never include raw bearer tokens, signing keys, or identity-provider secrets in issues, pull requests, logs, or committed settings.
+Authentication configuration, claim contracts, 401/403 behavior, and secret-handling expectations are documented in [docs/15-authentication.md](docs/15-authentication.md) and [docs/16-trusted-tenant-resolution.md](docs/16-trusted-tenant-resolution.md). Never include raw bearer tokens, signing keys, or identity-provider secrets in issues, pull requests, logs, or committed settings.
 
 ## Response expectations
 

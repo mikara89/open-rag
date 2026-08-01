@@ -9,6 +9,7 @@ public sealed class JwtAuthenticationOptions
     public string Audience { get; set; } = string.Empty;
     public bool RequireHttpsMetadata { get; set; } = true;
     public string UserIdClaimType { get; set; } = OpenRagClaimTypes.UserId;
+    public string TenantIdClaimType { get; set; } = OpenRagClaimTypes.TenantId;
     public string RoleClaimType { get; set; } = OpenRagClaimTypes.Role;
     public int ClockSkewSeconds { get; set; } = 60;
 }

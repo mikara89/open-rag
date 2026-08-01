@@ -27,7 +27,9 @@ This is a production-oriented development baseline, not a production deployment.
 - **Objective:** Resolve tenant identity only from authenticated, trusted claims or server-side mappings.
 - **Acceptance criteria:** Request-supplied tenant identifiers cannot override the authenticated tenant; background events preserve trusted tenant context; negative tests cover spoofing attempts.
 - **Dependencies:** P0.2 authentication foundation.
-- **Status:** Planned
+- **Status:** Complete — HTTP tenant identity is resolved only from exactly one validated non-empty GUID JWT claim; request spoofing cannot override it; the development fallback is removed; CAP events and Worker commands preserve tenant context explicitly. The final P0.3 validation run passed all 403 tests, dependency auditing, format checks, and documentation checks.
+
+> Trusted tenant resolution is complete, but full resource authorization, repository/storage/vector isolation auditing, and adversarial cross-tenant integration testing remain P0.4 and P0.5 work.
 
 ### P0.4 — Authorization and retrieval isolation
 
@@ -54,8 +56,7 @@ This is a production-oriented development baseline, not a production deployment.
 
 ### Identity, authorization, and tenancy
 
-- Extend the authentication foundation with trusted tenant resolution and resource-level authorization.
-- Derive tenant identity from trusted credentials instead of request-supplied values.
+- Build resource-level authorization on the completed trusted-tenant foundation.
 - Harden tenant isolation in every query, event, cache key, storage key, and operational tool.
 - Add cross-tenant negative tests and authorization audit coverage.
 
@@ -78,7 +79,7 @@ This is a production-oriented development baseline, not a production deployment.
 ## Suggested delivery order
 
 1. Resolve known dependency advisories and establish a coverage policy plus security scanning.
-2. Complete trusted tenant resolution, resource authorization, and tenant-isolation hardening on the authentication foundation.
+2. Complete resource authorization and tenant-isolation hardening on the trusted-tenant foundation.
 3. Add S3-compatible storage plus tested backup/restore procedures.
 4. Create disposable integration infrastructure and a live smoke-test CI job.
 5. Add deployment manifests and a gated deployment pipeline.

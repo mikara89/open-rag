@@ -33,6 +33,7 @@ public sealed class DocumentChunkingRequestedConsumer : ICapSubscribe
 
         // Dispatch to Application handler via Mediator
         var command = new ChunkDocumentCommand(
+            TenantId: message.TenantId,
             DocumentId: message.DocumentId,
             VersionId: message.VersionId,
             ProcessingRunId: message.ProcessingRunId,

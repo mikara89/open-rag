@@ -57,7 +57,6 @@ api.MapGet("/documents", async (
     CancellationToken cancellationToken) =>
 {
     var query = new ListDocumentsQuery(
-        TenantId: Guid.Empty, // filled by handler via ICurrentTenant
         PageNumber: pageNumber ?? 1,
         PageSize: pageSize ?? 20,
         Status: status,
@@ -97,7 +96,7 @@ api.MapGet("/documents/{documentId:guid}/status", async (
     ISender sender,
     CancellationToken cancellationToken) =>
 {
-    var query = new GetDocumentStatusQuery(documentId, Guid.Empty);
+    var query = new GetDocumentStatusQuery(documentId);
     var response = await sender.Send(query, cancellationToken);
     return Results.Ok(response);
 })
@@ -114,7 +113,6 @@ api.MapPost("/documents/{documentId:guid}/reprocess", async (
     var correlationId = Guid.NewGuid().ToString("N");
 
     var command = new ReprocessDocumentCommand(
-        TenantId: Guid.Empty, // filled by handler via ICurrentTenant
         DocumentId: documentId,
         ForcePreprocess: request.ForcePreprocess,
         ForceChunk: request.ForceChunk,
@@ -242,7 +240,6 @@ api.MapPost("/rag/ask", async (
 {
     var query = new AskQuestionQuery(
         Question: request.Question,
-        TenantId: request.TenantId,
         FilterDocumentIds: request.DocumentIds?.Count > 0 ? request.DocumentIds : null,
         TopK: request.TopK > 0 ? request.TopK : null,
         Model: request.Model ?? "mock-chat",
@@ -272,7 +269,6 @@ app.Run();
 
 internal sealed record AskQuestionRequest(
     string Question,
-    Guid TenantId,
     IReadOnlyCollection<Guid>? DocumentIds,
     int TopK,
     string? Model

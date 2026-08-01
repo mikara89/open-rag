@@ -34,6 +34,7 @@ public sealed class DocumentUploadedConsumerTests
         Assert.NotNull(eventBus.LastEvent);
 
         var preprocessEvent = Assert.IsType<DocumentPreprocessRequestedEvent>(eventBus.LastEvent);
+        Assert.Equal(message.TenantId, preprocessEvent.TenantId);
         Assert.Equal(message.DocumentId, preprocessEvent.DocumentId);
         Assert.Equal(message.VersionId, preprocessEvent.VersionId);
         Assert.Equal(message.OriginalObjectKey, preprocessEvent.OriginalObjectKey);

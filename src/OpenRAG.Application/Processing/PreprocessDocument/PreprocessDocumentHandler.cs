@@ -3,7 +3,6 @@ using Microsoft.Extensions.Logging;
 using OpenRAG.Application.Abstractions.Messaging;
 using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Processing;
-using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Time;
 using OpenRAG.Application.Common;
 using OpenRAG.Application.Messaging.Events;
@@ -15,7 +14,6 @@ namespace OpenRAG.Application.Processing.PreprocessDocument;
 
 public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocumentCommand, PreprocessDocumentResponse>
 {
-    private readonly ICurrentTenant _currentTenant;
     private readonly IDocumentRepository _documentRepository;
     private readonly IProcessingRunRepository _processingRunRepository;
     private readonly IDocumentPreprocessor _documentPreprocessor;
@@ -25,7 +23,6 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
     private readonly ILogger<PreprocessDocumentHandler> _logger;
 
     public PreprocessDocumentHandler(
-        ICurrentTenant currentTenant,
         IDocumentRepository documentRepository,
         IProcessingRunRepository processingRunRepository,
         IDocumentPreprocessor documentPreprocessor,
@@ -34,7 +31,6 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
         IUnitOfWork unitOfWork,
         ILogger<PreprocessDocumentHandler> logger)
     {
-        _currentTenant = currentTenant;
         _documentRepository = documentRepository;
         _processingRunRepository = processingRunRepository;
         _documentPreprocessor = documentPreprocessor;
@@ -49,6 +45,9 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
         CancellationToken cancellationToken = default)
     {
         // 1. Validate command
+        if (command.TenantId == Guid.Empty)
+            throw new AppException("TenantId cannot be empty.");
+
         if (command.DocumentId == Guid.Empty)
             throw new AppException("DocumentId cannot be empty.");
 
@@ -61,7 +60,7 @@ public sealed class PreprocessDocumentHandler : IRequestHandler<PreprocessDocume
         if (string.IsNullOrWhiteSpace(command.CorrelationId))
             throw new AppException("CorrelationId cannot be empty.");
 
-        var tenantId = _currentTenant.TenantId;
+        var tenantId = command.TenantId;
 
         // 2. Load Document and Version — no-op gracefully if missing or deleted
         var version = await _documentRepository.GetVersionForUpdateAsync(

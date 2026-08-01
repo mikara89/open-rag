@@ -1,7 +1,6 @@
 using OpenRAG.Application.Abstractions.Messaging;
 using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Processing;
-using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Time;
 using OpenRAG.Application.Common;
 using OpenRAG.Application.Processing.PreprocessDocument;
@@ -12,16 +11,26 @@ namespace OpenRAG.UnitTests.Application.Processing;
 
 public sealed class PreprocessDocumentHandlerTests
 {
-    private static readonly Guid TenantId = Guid.NewGuid();
+    private static readonly Guid TenantId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static readonly Guid DocId = Guid.NewGuid();
     private static readonly Guid VerId = Guid.NewGuid();
     private static readonly Guid RunId = Guid.NewGuid();
 
     [Fact]
+    public async Task Rejects_empty_TenantId()
+    {
+        var handler = CreateHandler();
+        var cmd = new PreprocessDocumentCommand(Guid.Empty, DocId, VerId, RunId, "corr");
+
+        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
+        Assert.Contains("TenantId", ex.Message);
+    }
+
+    [Fact]
     public async Task Rejects_empty_DocumentId()
     {
         var handler = CreateHandler();
-        var cmd = new PreprocessDocumentCommand(Guid.Empty, VerId, RunId, "corr");
+        var cmd = new PreprocessDocumentCommand(TenantId, Guid.Empty, VerId, RunId, "corr");
 
         var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
         Assert.Contains("DocumentId", ex.Message);
@@ -31,7 +40,7 @@ public sealed class PreprocessDocumentHandlerTests
     public async Task Rejects_empty_VersionId()
     {
         var handler = CreateHandler();
-        var cmd = new PreprocessDocumentCommand(DocId, Guid.Empty, RunId, "corr");
+        var cmd = new PreprocessDocumentCommand(TenantId, DocId, Guid.Empty, RunId, "corr");
 
         var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
         Assert.Contains("VersionId", ex.Message);
@@ -41,7 +50,7 @@ public sealed class PreprocessDocumentHandlerTests
     public async Task Rejects_empty_ProcessingRunId()
     {
         var handler = CreateHandler();
-        var cmd = new PreprocessDocumentCommand(DocId, VerId, Guid.Empty, "corr");
+        var cmd = new PreprocessDocumentCommand(TenantId, DocId, VerId, Guid.Empty, "corr");
 
         var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
         Assert.Contains("ProcessingRunId", ex.Message);
@@ -52,7 +61,7 @@ public sealed class PreprocessDocumentHandlerTests
     {
         var fakes = CreateFakes(versionMissing: true);
         var handler = CreateHandler(fakes);
-        var cmd = new PreprocessDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new PreprocessDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         var response = await handler.Handle(cmd);
 
@@ -64,7 +73,7 @@ public sealed class PreprocessDocumentHandlerTests
     {
         var fakes = CreateFakes(runMissing: true);
         var handler = CreateHandler(fakes);
-        var cmd = new PreprocessDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new PreprocessDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         var response = await handler.Handle(cmd);
 
@@ -76,11 +85,12 @@ public sealed class PreprocessDocumentHandlerTests
     {
         var fakes = CreateFakes();
         var handler = CreateHandler(fakes);
-        var cmd = new PreprocessDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new PreprocessDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         await handler.Handle(cmd);
 
         Assert.True(fakes.Preprocessor.Called);
+        Assert.Equal(TenantId, fakes.Preprocessor.LastRequest?.TenantId);
     }
 
     [Fact]
@@ -88,7 +98,7 @@ public sealed class PreprocessDocumentHandlerTests
     {
         var fakes = CreateFakes();
         var handler = CreateHandler(fakes);
-        var cmd = new PreprocessDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new PreprocessDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         var response = await handler.Handle(cmd);
 
@@ -102,12 +112,13 @@ public sealed class PreprocessDocumentHandlerTests
     {
         var fakes = CreateFakes();
         var handler = CreateHandler(fakes);
-        var cmd = new PreprocessDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new PreprocessDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         await handler.Handle(cmd);
 
         Assert.Equal("document.preprocessed", fakes.EventBus.LastTopic);
-        Assert.NotNull(fakes.EventBus.LastEvent);
+        var published = Assert.IsType<OpenRAG.Application.Messaging.Events.DocumentPreprocessedEvent>(fakes.EventBus.LastEvent);
+        Assert.Equal(TenantId, published.TenantId);
     }
 
     [Fact]
@@ -115,7 +126,7 @@ public sealed class PreprocessDocumentHandlerTests
     {
         var fakes = CreateFakes();
         var handler = CreateHandler(fakes);
-        var cmd = new PreprocessDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new PreprocessDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         await handler.Handle(cmd);
 
@@ -128,7 +139,7 @@ public sealed class PreprocessDocumentHandlerTests
         var fakes = CreateFakes();
         fakes.Preprocessor.ShouldThrow = true;
         var handler = CreateHandler(fakes);
-        var cmd = new PreprocessDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new PreprocessDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         var response = await handler.Handle(cmd);
 
@@ -144,7 +155,7 @@ public sealed class PreprocessDocumentHandlerTests
         var fakes = CreateFakes();
         fakes.Preprocessor.ShouldThrow = true;
         var handler = CreateHandler(fakes);
-        var cmd = new PreprocessDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new PreprocessDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         await handler.Handle(cmd);
 
@@ -157,7 +168,7 @@ public sealed class PreprocessDocumentHandlerTests
     {
         var fakes = CreateFakes(stepStatus: DocumentProcessingStepStatus.Completed);
         var handler = CreateHandler(fakes);
-        var cmd = new PreprocessDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new PreprocessDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         var response = await handler.Handle(cmd);
 
@@ -171,7 +182,7 @@ public sealed class PreprocessDocumentHandlerTests
         var fakes = CreateFakes();
         fakes.Preprocessor.ShouldThrow = true;
         var handler = CreateHandler(fakes);
-        var cmd = new PreprocessDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new PreprocessDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         var response = await handler.Handle(cmd);
 
@@ -184,7 +195,7 @@ public sealed class PreprocessDocumentHandlerTests
     {
         var fakes = CreateFakes(stepStatus: DocumentProcessingStepStatus.Failed);
         var handler = CreateHandler(fakes);
-        var cmd = new PreprocessDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new PreprocessDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         var response = await handler.Handle(cmd);
 
@@ -198,7 +209,7 @@ public sealed class PreprocessDocumentHandlerTests
     {
         fakes ??= CreateFakes();
         return new PreprocessDocumentHandler(
-            fakes.Tenant, fakes.DocRepo, fakes.RunRepo, fakes.Preprocessor,
+            fakes.DocRepo, fakes.RunRepo, fakes.Preprocessor,
             fakes.EventBus, fakes.Clock, fakes.UnitOfWork,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<PreprocessDocumentHandler>.Instance);
     }
@@ -208,8 +219,6 @@ public sealed class PreprocessDocumentHandlerTests
         bool runMissing = false,
         DocumentProcessingStepStatus? stepStatus = null)
     {
-        var tenant = new StubTenant(TenantId);
-
         DocumentProcessingStep? step = null;
         if (stepStatus.HasValue)
         {
@@ -239,7 +248,7 @@ public sealed class PreprocessDocumentHandlerTests
         var clock = new StubClock();
         var uow = new FakeUoW();
 
-        return new AllFakes(tenant, docRepo, runRepo, preprocessor, eventBus, clock, uow);
+        return new AllFakes(docRepo, runRepo, preprocessor, eventBus, clock, uow);
     }
 
     private static DocumentVersion CreateVersion()
@@ -251,7 +260,6 @@ public sealed class PreprocessDocumentHandlerTests
             ProcessingRunReason.InitialUpload, "corr-123");
 
     private sealed record AllFakes(
-        StubTenant Tenant,
         FakeDocRepo DocRepo,
         FakeRunRepo RunRepo,
         FakePreprocessor Preprocessor,
@@ -260,12 +268,6 @@ public sealed class PreprocessDocumentHandlerTests
         FakeUoW UnitOfWork);
 
     // ══ Stubs / Fakes ═════════════════════════════════════════════
-
-    private sealed class StubTenant : ICurrentTenant
-    {
-        public StubTenant(Guid id) => TenantId = id;
-        public Guid TenantId { get; }
-    }
 
     private sealed class StubClock : IClock
     {
@@ -327,11 +329,13 @@ public sealed class PreprocessDocumentHandlerTests
     private sealed class FakePreprocessor : IDocumentPreprocessor
     {
         public bool Called { get; private set; }
+        public DocumentPreprocessingRequest? LastRequest { get; private set; }
         public bool ShouldThrow { get; set; }
 
         public Task<DocumentPreprocessingResult> PreprocessAsync(DocumentPreprocessingRequest req, CancellationToken ct = default)
         {
             Called = true;
+            LastRequest = req;
             if (ShouldThrow) throw new InvalidOperationException("Simulated preprocessor failure");
             return Task.FromResult(new DocumentPreprocessingResult("md-key", "json-key", "md-hash", "json-hash"));
         }

@@ -4,7 +4,6 @@ using Microsoft.Extensions.Options;
 using OpenRAG.Application.Abstractions.AI;
 using OpenRAG.Application.Abstractions.Messaging;
 using OpenRAG.Application.Abstractions.Persistence;
-using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Time;
 using OpenRAG.Application.Common;
 using OpenRAG.Application.Messaging.Events;
@@ -15,7 +14,6 @@ namespace OpenRAG.Application.Processing.GenerateEmbeddings;
 
 public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddingsCommand, GenerateEmbeddingsResponse>
 {
-    private readonly ICurrentTenant _currentTenant;
     private readonly IDocumentChunkRepository _documentChunkRepository;
     private readonly IDocumentEmbeddingRepository _documentEmbeddingRepository;
     private readonly IDocumentRepository _documentRepository;
@@ -28,7 +26,6 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
     private readonly ILogger<GenerateEmbeddingsHandler> _logger;
 
     public GenerateEmbeddingsHandler(
-        ICurrentTenant currentTenant,
         IDocumentChunkRepository documentChunkRepository,
         IDocumentEmbeddingRepository documentEmbeddingRepository,
         IDocumentRepository documentRepository,
@@ -40,7 +37,6 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
         IOptions<GenerateEmbeddingsOptions> options,
         ILogger<GenerateEmbeddingsHandler> logger)
     {
-        _currentTenant = currentTenant;
         _documentChunkRepository = documentChunkRepository;
         _documentEmbeddingRepository = documentEmbeddingRepository;
         _documentRepository = documentRepository;
@@ -58,6 +54,9 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
         CancellationToken cancellationToken = default)
     {
         // 1. Validate command
+        if (command.TenantId == Guid.Empty)
+            throw new AppException("TenantId cannot be empty.");
+
         if (command.DocumentId == Guid.Empty)
             throw new AppException("DocumentId cannot be empty.");
 
@@ -70,7 +69,7 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
         if (string.IsNullOrWhiteSpace(command.CorrelationId))
             throw new AppException("CorrelationId cannot be empty.");
 
-        var tenantId = _currentTenant.TenantId;
+        var tenantId = command.TenantId;
 
         // 2. Load processing run for update
         var run = await _processingRunRepository.GetByIdForUpdateAsync(

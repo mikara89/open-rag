@@ -3,6 +3,7 @@ using Mediator;
 namespace OpenRAG.Application.Processing.ChunkDocument;
 
 public sealed record ChunkDocumentCommand(
+    Guid TenantId,
     Guid DocumentId,
     Guid VersionId,
     Guid ProcessingRunId,

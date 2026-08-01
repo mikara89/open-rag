@@ -21,14 +21,14 @@ dotnet user-secrets set "Authentication:Jwt:Authority" "https://idp.example.com"
 dotnet user-secrets set "Authentication:Jwt:Audience" "openrag-api" --project src/OpenRAG.Api
 ```
 
-Equivalent environment variables are `Authentication__Jwt__Authority` and `Authentication__Jwt__Audience`. HTTPS metadata is required by default. Obtain an access token from the configured identity provider and keep it only in the current process:
+Equivalent environment variables are `Authentication__Jwt__Authority` and `Authentication__Jwt__Audience`. The tenant claim defaults to `tenant_id`; use `Authentication__Jwt__TenantIdClaimType` only when the identity provider uses another trustworthy claim name. HTTPS metadata is required by default. Obtain an access token from the configured identity provider and keep it only in the current process:
 
 ```powershell
 $env:OPENRAG_ACCESS_TOKEN = "<access token obtained outside OpenRAG>"
 ```
 
-OpenRAG validates tokens but does not issue them. See [JWT authentication](15-authentication.md) for the full contract.
-The full MVP smoke test calls the provider-diagnostics endpoint, so its token must include exactly one valid GUID user-ID claim and the configured `admin` role.
+OpenRAG validates tokens but does not issue them. See [JWT authentication](15-authentication.md) and [trusted tenant resolution](16-trusted-tenant-resolution.md) for the full contract.
+The full MVP smoke test calls the provider-diagnostics endpoint, so its token must include exactly one valid GUID user-ID claim, exactly one valid GUID tenant claim, and the configured `admin` role. The RAG body contains no tenant ID; the token supplies it. Never add a tenant-selection header.
 
 ### 1. Configure mock providers
 
@@ -222,7 +222,7 @@ GitHub Actions runs restore, Release build, tests with TRX and Cobertura coverag
 ### API returns 401 or 403
 
 - `401` with `WWW-Authenticate: Bearer` means the token is missing, malformed, expired, unsigned, or failed issuer, audience, or signature validation.
-- `403` means the token was authenticated but lacks exactly one usable GUID user-ID claim or the required role.
+- `403` means the token was authenticated but lacks exactly one usable GUID user-ID or tenant-ID claim, or lacks the required role.
 - Provider diagnostics requires the configured administrator role; ordinary authenticated users receive `403`.
 
 ### Document stuck in Processing
@@ -289,9 +289,10 @@ With pgvector-backed storage:
 MVP is accepted when all of the following pass:
 
 - [ ] **Build:** `dotnet build OpenRAG.slnx` — 0 errors
-- [ ] **Tests:** `dotnet test OpenRAG.slnx` — all tests pass (367 in the final P0.2 validation run)
+- [ ] **Tests:** `dotnet test OpenRAG.slnx` — all current tests pass; record the actual count from the run
 - [ ] **Format:** `dotnet format whitespace|style --verify-no-changes` — clean
-- [ ] **Authentication:** Missing and invalid tokens return 401; a valid token with a GUID user-ID claim is accepted
+- [ ] **Authentication:** Missing and invalid tokens return 401; valid tokens require exactly one non-empty GUID user-ID and tenant claim
+- [ ] **Tenant spoofing:** Header, query, and body tenant values cannot override the validated token tenant
 - [ ] **Provider diagnostics:** `GET /api/system/providers` returns configured providers only for an administrator token
 - [ ] **Upload:** `POST /api/documents/upload` returns 201 with documentId
 - [ ] **Processing:** Document reaches `Ready` status within timeout

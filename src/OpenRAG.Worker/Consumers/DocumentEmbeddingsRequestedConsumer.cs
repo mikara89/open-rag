@@ -33,6 +33,7 @@ public sealed class DocumentEmbeddingsRequestedConsumer : ICapSubscribe
 
         // Dispatch to Application handler via Mediator
         var command = new GenerateEmbeddingsCommand(
+            TenantId: message.TenantId,
             DocumentId: message.DocumentId,
             VersionId: message.VersionId,
             ProcessingRunId: message.ProcessingRunId,

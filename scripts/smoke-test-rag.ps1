@@ -5,7 +5,6 @@ param(
     [string]$ApiBaseUrl = "https://localhost:7063",
     [string]$FilePath = "README.md",
     [string]$Question = "What is OpenRAG about?",
-    [string]$TenantId = "11111111-1111-1111-1111-111111111111",
     [string]$Model = "mock-chat",
     [string]$ExpectedPreprocessor = ""
 )
@@ -85,7 +84,7 @@ if ($statusObj.versions -and $statusObj.versions.Count -gt 0) {
 # 4. RAG Ask
 Write-Host ""
 Write-Host "[4/4] RAG Ask (model: $Model)..." -ForegroundColor Yellow
-$body = @{ question = $Question; tenantId = $TenantId; topK = 3; model = $Model } | ConvertTo-Json -Compress
+$body = @{ question = $Question; topK = 3; model = $Model } | ConvertTo-Json -Compress
 $ragResp = curl.exe -s -k -X POST $ragUrl -H "Content-Type: application/json" -d $body 2>&1
 $ragJson = $ragResp | ConvertFrom-Json -Depth 3
 

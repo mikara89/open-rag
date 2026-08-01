@@ -35,6 +35,7 @@ public sealed class DocumentPreprocessedConsumerTests
         Assert.NotNull(eventBus.LastEvent);
 
         var chunkingEvent = Assert.IsType<DocumentChunkingRequestedEvent>(eventBus.LastEvent);
+        Assert.Equal(message.TenantId, chunkingEvent.TenantId);
         Assert.Equal(message.DocumentId, chunkingEvent.DocumentId);
         Assert.Equal(message.VersionId, chunkingEvent.VersionId);
         Assert.Equal(message.MarkdownObjectKey, chunkingEvent.MarkdownObjectKey);

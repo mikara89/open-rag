@@ -32,6 +32,7 @@ public sealed class DocumentIntelligenceRequestedConsumer : ICapSubscribe
             message.DocumentId, message.VersionId);
 
         var command = new GenerateIntelligenceCommand(
+            TenantId: message.TenantId,
             DocumentId: message.DocumentId,
             VersionId: message.VersionId,
             ProcessingRunId: message.ProcessingRunId,

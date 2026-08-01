@@ -34,6 +34,7 @@ public sealed class DocumentPreprocessRequestedConsumer : ICapSubscribe
 
         // Dispatch to Application handler via Mediator
         var command = new PreprocessDocumentCommand(
+            TenantId: message.TenantId,
             DocumentId: message.DocumentId,
             VersionId: message.VersionId,
             ProcessingRunId: message.ProcessingRunId,

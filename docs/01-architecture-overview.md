@@ -159,7 +159,7 @@ Cascading delete: removes embeddings, chunks, and document/versions. Returns 204
 
 ```
 POST /api/rag/ask
-{ "question": "...", "tenantId": "...", "topK": 5, "model": "mock-chat" }
+{ "question": "...", "documentIds": null, "topK": 5, "model": "mock-chat" }
 ```
 
 ### Inspect artifacts and chunks

@@ -5,7 +5,6 @@ param(
     [string]$ApiBaseUrl = "https://localhost:7063",
     [string]$FilePath = "README.md",
     [string]$Question = "What is OpenRAG about?",
-    [string]$TenantId = "11111111-1111-1111-1111-111111111111",
     [string]$Model = "mock-chat"
 )
 
@@ -87,7 +86,6 @@ if ($detail.latestVersion) {
 Write-Host "[6/7] Asking question..." -ForegroundColor Yellow
 $askBody = @{
     question = $Question
-    tenantId = $TenantId
     topK = 3
     model = $Model
 } | ConvertTo-Json

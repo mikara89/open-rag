@@ -11,13 +11,14 @@ namespace OpenRAG.UnitTests.Application.Rag;
 
 public sealed class AskQuestionHandlerTests
 {
+    private static readonly Guid TenantA = new("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
     [Fact]
     public async Task Rejects_empty_question()
     {
         var handler = CreateHandler();
         var query = new AskQuestionQuery(
             Question: "",
-            TenantId: Guid.NewGuid(),
             FilterDocumentIds: null,
             TopK: 5,
             Model: "gpt-4",
@@ -35,7 +36,6 @@ public sealed class AskQuestionHandlerTests
         var handler = CreateHandler();
         var query = new AskQuestionQuery(
             Question: "   ",
-            TenantId: Guid.NewGuid(),
             FilterDocumentIds: null,
             TopK: 5,
             Model: "gpt-4",
@@ -53,7 +53,6 @@ public sealed class AskQuestionHandlerTests
         var handler = CreateHandler();
         var query = new AskQuestionQuery(
             Question: "What is RAG?",
-            TenantId: Guid.NewGuid(),
             FilterDocumentIds: null,
             TopK: 0,
             Model: "gpt-4",
@@ -71,7 +70,6 @@ public sealed class AskQuestionHandlerTests
         var handler = CreateHandler();
         var query = new AskQuestionQuery(
             Question: "What is RAG?",
-            TenantId: Guid.NewGuid(),
             FilterDocumentIds: null,
             TopK: -1,
             Model: "gpt-4",
@@ -89,7 +87,6 @@ public sealed class AskQuestionHandlerTests
         var handler = CreateHandler();
         var query = new AskQuestionQuery(
             Question: "What is RAG?",
-            TenantId: Guid.NewGuid(),
             FilterDocumentIds: null,
             TopK: 5,
             Model: "",
@@ -202,31 +199,20 @@ public sealed class AskQuestionHandlerTests
     }
 
     [Fact]
-    public async Task Passes_tenant_id_to_embedding_service()
+    public async Task Passes_current_tenant_to_all_rag_dependencies()
     {
-        var fakes = CreateFakes();
+        var fakes = CreateFakes(tenantId: TenantA);
         var handler = CreateHandler(fakes);
-        var tenantId = Guid.NewGuid();
-        var query = CreateValidQuery(tenantId: tenantId);
+        var query = CreateValidQuery();
 
         await handler.Handle(query);
 
         Assert.NotNull(fakes.EmbeddingService.LastRequest);
-        Assert.Equal(tenantId, fakes.EmbeddingService.LastRequest!.TenantId);
-    }
-
-    [Fact]
-    public async Task Passes_tenant_id_to_vector_search()
-    {
-        var fakes = CreateFakes();
-        var handler = CreateHandler(fakes);
-        var tenantId = Guid.NewGuid();
-        var query = CreateValidQuery(tenantId: tenantId);
-
-        await handler.Handle(query);
-
         Assert.NotNull(fakes.VectorSearchService.LastRequest);
-        Assert.Equal(tenantId, fakes.VectorSearchService.LastRequest!.TenantId);
+        Assert.NotNull(fakes.ChatCompletionService.LastRequest);
+        Assert.Equal(TenantA, fakes.EmbeddingService.LastRequest!.TenantId);
+        Assert.Equal(TenantA, fakes.VectorSearchService.LastRequest!.TenantId);
+        Assert.Equal(TenantA, fakes.ChatCompletionService.LastRequest!.TenantId);
     }
 
     [Fact]
@@ -300,10 +286,9 @@ public sealed class AskQuestionHandlerTests
 
     // ══ Helpers ═══════════════════════════════════════════════════
 
-    private static AskQuestionQuery CreateValidQuery(Guid? tenantId = null)
+    private static AskQuestionQuery CreateValidQuery()
         => new(
             Question: "What is RAG?",
-            TenantId: tenantId ?? Guid.NewGuid(),
             FilterDocumentIds: null,
             TopK: 5,
             Model: "mock-chat",
@@ -319,9 +304,9 @@ public sealed class AskQuestionHandlerTests
             embeddingOptions, ragOptions);
     }
 
-    private static AllFakes CreateFakes(bool hasResults = true)
+    private static AllFakes CreateFakes(bool hasResults = true, Guid? tenantId = null)
     {
-        var tenant = new StubCurrentTenant(Guid.NewGuid());
+        var tenant = new StubCurrentTenant(tenantId ?? TenantA);
         var embeddings = new FakeEmbeddingService();
         var vectorSearch = new FakeVectorSearchService(hasResults);
         var chat = new FakeChatCompletionService();
@@ -391,11 +376,13 @@ public sealed class AskQuestionHandlerTests
     private sealed class FakeChatCompletionService : IChatCompletionService
     {
         public bool Called { get; private set; }
+        public ChatCompletionRequest? LastRequest { get; private set; }
 
         public Task<ChatCompletionResult> CompleteAsync(
             ChatCompletionRequest request, CancellationToken ct = default)
         {
             Called = true;
+            LastRequest = request;
             return Task.FromResult(new ChatCompletionResult(
                 Content: "Mock answer: RAG stands for Retrieval-Augmented Generation.",
                 Provider: "mock",

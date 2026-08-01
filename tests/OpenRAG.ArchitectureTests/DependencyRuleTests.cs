@@ -1,5 +1,10 @@
 using System.Reflection;
 using NetArchTest.Rules;
+using OpenRAG.Application.Abstractions.Security;
+using OpenRAG.Application.Processing.ChunkDocument;
+using OpenRAG.Application.Processing.GenerateEmbeddings;
+using OpenRAG.Application.Processing.GenerateIntelligence;
+using OpenRAG.Application.Processing.PreprocessDocument;
 
 namespace OpenRAG.ArchitectureTests;
 
@@ -94,6 +99,70 @@ public class DependencyRuleTests
         => Types.InAssembly(InfrastructureAssembly)
             .ShouldNot().HaveDependencyOn("OpenRAG.Worker")
             .GetResult().ShouldSucceed();
+
+    [Fact]
+    public void Worker_MustNotReference_Api_http_tenant_resolution()
+        => Types.InAssembly(WorkerAssembly)
+            .ShouldNot().HaveDependencyOn("OpenRAG.Api")
+            .GetResult().ShouldSucceed();
+
+    [Fact]
+    public void Infrastructure_contains_no_development_current_tenant_fallback()
+        => Assert.DoesNotContain(
+            InfrastructureAssembly.GetTypes(),
+            type => type.Name.Contains("DevelopmentCurrentTenant", StringComparison.Ordinal));
+
+    [Fact]
+    public void Background_processing_handlers_do_not_depend_on_ambient_tenant_context()
+    {
+        Type[] handlerTypes =
+        [
+            typeof(PreprocessDocumentHandler),
+            typeof(ChunkDocumentHandler),
+            typeof(GenerateIntelligenceHandler),
+            typeof(GenerateEmbeddingsHandler)
+        ];
+
+        Assert.All(handlerTypes, handlerType =>
+            Assert.DoesNotContain(
+                handlerType.GetConstructors().SelectMany(constructor => constructor.GetParameters()),
+                parameter => parameter.ParameterType == typeof(ICurrentTenant)));
+    }
+
+    [Fact]
+    public void Every_background_processing_command_has_public_guid_tenant_id()
+    {
+        Type[] commandTypes =
+        [
+            typeof(PreprocessDocumentCommand),
+            typeof(ChunkDocumentCommand),
+            typeof(GenerateIntelligenceCommand),
+            typeof(GenerateEmbeddingsCommand)
+        ];
+
+        Assert.All(commandTypes, commandType =>
+        {
+            var tenantProperty = commandType.GetProperty("TenantId", BindingFlags.Public | BindingFlags.Instance);
+            Assert.NotNull(tenantProperty);
+            Assert.Equal(typeof(Guid), tenantProperty.PropertyType);
+        });
+    }
+
+    [Fact]
+    public void Every_document_event_contract_has_public_guid_tenant_id()
+    {
+        var eventTypes = ApplicationAssembly.GetTypes()
+            .Where(type => type.Namespace == "OpenRAG.Application.Messaging.Events")
+            .ToArray();
+
+        Assert.NotEmpty(eventTypes);
+        Assert.All(eventTypes, eventType =>
+        {
+            var tenantProperty = eventType.GetProperty("TenantId", BindingFlags.Public | BindingFlags.Instance);
+            Assert.NotNull(tenantProperty);
+            Assert.Equal(typeof(Guid), tenantProperty.PropertyType);
+        });
+    }
 
     // ── Controller rule ───────────────────────────────────────────
 

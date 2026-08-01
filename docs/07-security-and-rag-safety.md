@@ -8,9 +8,11 @@ Tenant isolation and authorization must be enforced before retrieval, before LLM
 
 ## Current authentication boundary
 
-JWT Bearer authentication is implemented for every `/api` endpoint. The authenticated-user policy requires exactly one configured user-ID claim containing a non-empty GUID, and provider diagnostics additionally requires the `admin` role. See [JWT authentication](15-authentication.md).
+JWT Bearer authentication is implemented for every `/api` endpoint. The authenticated-user policy requires exactly one configured user-ID claim and exactly one configured tenant-ID claim, each containing a non-empty GUID. Provider diagnostics additionally requires the `admin` role. See [JWT authentication](15-authentication.md).
 
-Trusted tenant resolution and document authorization are not implemented yet. `DevelopmentCurrentTenant` and request-supplied RAG tenant selection remain P0.3 blockers, so the current system is not production-safe for multitenant use.
+Trusted tenant resolution is implemented: the API uses `HttpContextCurrentTenant` to read only the validated JWT claim (`tenant_id` by default), and Workers receive the same tenant explicitly in CAP events and processing commands. Headers, query strings, routes, and bodies cannot select the tenant, and no development fallback exists. See [trusted tenant resolution](16-trusted-tenant-resolution.md).
+
+Resource authorization is separate and remains incomplete. P0.4 must finish document-level authorization and audit every repository, object-storage, and vector boundary; P0.5 must add adversarial cross-tenant integration coverage. The current system is not yet production-safe for multitenant use.
 
 ## Tenant isolation
 

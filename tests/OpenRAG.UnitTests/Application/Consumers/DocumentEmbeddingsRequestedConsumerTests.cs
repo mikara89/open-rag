@@ -29,6 +29,7 @@ public sealed class DocumentEmbeddingsRequestedConsumerTests
         Assert.NotNull(sender.LastCommand);
 
         var cmd = Assert.IsType<GenerateEmbeddingsCommand>(sender.LastCommand);
+        Assert.Equal(message.TenantId, cmd.TenantId);
         Assert.Equal(message.DocumentId, cmd.DocumentId);
         Assert.Equal(message.VersionId, cmd.VersionId);
         Assert.Equal(message.ProcessingRunId, cmd.ProcessingRunId);
