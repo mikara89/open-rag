@@ -1,4 +1,4 @@
-using Mediator;
+using OpenRAG.Application.Pipeline;
 
 namespace OpenRAG.Application.Documents.ReprocessDocument;
 
@@ -9,7 +9,9 @@ public sealed record ReprocessDocumentCommand(
     bool ForceIntelligence,
     bool ForceEmbeddings,
     string CorrelationId
-) : IRequest<ReprocessDocumentResponse>;
+) : IOpenRagCommand<ReprocessDocumentResponse>,
+    IAuthenticatedApplicationMessage,
+    ICorrelatedMessage;
 
 public sealed record ReprocessDocumentResponse(
     Guid DocumentId,

@@ -1,11 +1,11 @@
-using Mediator;
+using OpenRAG.Application.Pipeline;
 
 namespace OpenRAG.Application.Documents.GetMarkdownArtifact;
 
 public sealed record GetMarkdownArtifactQuery(
     Guid DocumentId,
     Guid VersionId
-) : IRequest<GetMarkdownArtifactResponse>;
+) : IOpenRagQuery<GetMarkdownArtifactResponse>, IAuthenticatedApplicationMessage;
 
 public sealed record GetMarkdownArtifactResponse(
     string Content,

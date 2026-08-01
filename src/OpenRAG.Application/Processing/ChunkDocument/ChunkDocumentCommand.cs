@@ -1,4 +1,4 @@
-using Mediator;
+using OpenRAG.Application.Pipeline;
 
 namespace OpenRAG.Application.Processing.ChunkDocument;
 
@@ -8,7 +8,9 @@ public sealed record ChunkDocumentCommand(
     Guid VersionId,
     Guid ProcessingRunId,
     string CorrelationId
-) : IRequest<ChunkDocumentResponse>;
+) : IOpenRagCommand<ChunkDocumentResponse>,
+    IExplicitTenantMessage,
+    ICorrelatedMessage;
 
 public sealed record ChunkDocumentResponse(
     Guid DocumentId,

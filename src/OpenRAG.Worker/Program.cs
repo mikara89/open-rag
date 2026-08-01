@@ -1,5 +1,6 @@
 using Mediator;
 using OpenRAG.Application;
+using OpenRAG.Application.Pipeline;
 using OpenRAG.Infrastructure;
 using OpenRAG.Worker;
 using OpenRAG.Worker.Consumers;
@@ -9,6 +10,7 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddMediator(options => options.ServiceLifetime = ServiceLifetime.Scoped);
+builder.Services.AddOpenRagMediatorPipelines(OpenRagPipelineHost.Worker);
 
 // Register CAP subscribers so CAP can discover them
 builder.Services.AddTransient<DocumentUploadedConsumer>();

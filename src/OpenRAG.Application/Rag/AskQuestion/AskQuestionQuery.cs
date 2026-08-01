@@ -1,4 +1,4 @@
-using Mediator;
+using OpenRAG.Application.Pipeline;
 
 namespace OpenRAG.Application.Rag.AskQuestion;
 
@@ -8,4 +8,6 @@ public sealed record AskQuestionQuery(
     int? TopK,
     string Model,
     string CorrelationId
-) : IRequest<AskQuestionResponse>;
+) : IOpenRagQuery<AskQuestionResponse>,
+    IAuthenticatedApplicationMessage,
+    ICorrelatedMessage;

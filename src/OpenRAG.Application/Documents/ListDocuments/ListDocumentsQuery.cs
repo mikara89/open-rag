@@ -1,4 +1,4 @@
-using Mediator;
+using OpenRAG.Application.Pipeline;
 
 namespace OpenRAG.Application.Documents.ListDocuments;
 
@@ -7,7 +7,7 @@ public sealed record ListDocumentsQuery(
     int PageSize = 20,
     string? Status = null,
     string? Search = null
-) : IRequest<ListDocumentsResponse>;
+) : IOpenRagQuery<ListDocumentsResponse>, IAuthenticatedApplicationMessage;
 
 public sealed record ListDocumentsResponse(
     IReadOnlyList<ListDocumentsItem> Items,

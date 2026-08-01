@@ -31,6 +31,7 @@ The platform accepts files, stores originals through `IFileStorage`, preprocesse
 | [ADR 0001](docs/adr/0001-use-clean-onion-with-vertical-slices.md) | Architecture style |
 | [ADR 0002](docs/adr/0002-use-aspire-for-local-development.md) | Aspire local development |
 | [ADR 0003](docs/adr/0003-use-cap-with-postgresql-storage.md) | CAP with PostgreSQL storage |
+| [ADR 0004](docs/adr/0004-use-mediator-pipelines-for-narrow-cross-cutting-concerns.md) | Narrow Mediator pipelines for validation, context, scopes, and telemetry |
 
 ## Key decisions
 
@@ -46,6 +47,7 @@ The platform accepts files, stores originals through `IFileStorage`, preprocesse
 - File storage: local filesystem behind `IFileStorage` for the MVP; an S3-compatible provider is planned.
 - Preprocessing: mock or Docling Serve providers behind `IDocumentPreprocessor`.
 - AI providers: OpenAI-compatible interfaces behind abstractions.
+- Application dispatch: scoped Mediator with explicit command/query categories and host-specific validation, context, logging-scope, and telemetry behaviors.
 
 ## MVP capabilities
 
@@ -83,7 +85,7 @@ Every `/api` endpoint requires a validated JWT Bearer token. The default user-ID
 
 The tenant is the current resource-authorization boundary: any authenticated user with a valid trusted tenant claim may operate on that tenant's resources. `CreatedByUserId` is audit metadata, not a per-user ownership ACL. Document/version/chunk reads are explicitly tenant-scoped; persisted object keys are validated against tenant/document/version ownership; pgvector queries parameterize and apply the tenant, optional document filter, embedding compatibility, and full chunk relationship; RAG validates filters before embedding and retrieved identities before any LLM call. See [authorization and retrieval isolation](docs/17-authorization-and-isolation.md).
 
-> **P0.4 code-level isolation is complete, but production multitenancy is not.** P0.5 still requires disposable live PostgreSQL/pgvector, object-storage, API, and Worker adversarial tests. Per-user ownership, memberships, sharing, and ACLs are not implemented.
+> **P0.4 authorization and retrieval isolation and the later P0.4.1 Mediator pipeline foundation are complete.** Pipelines provide narrow primitive validation, trusted context guards, logging scopes, and application activities. Resource authorization, storage/vector isolation, transactions, and HTTP error mapping remain explicit outside generic behaviors. P0.5 cross-tenant live integration tests remain planned and still require disposable infrastructure.
 
 ## Quick validation
 

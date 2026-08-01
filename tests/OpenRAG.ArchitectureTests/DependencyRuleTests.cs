@@ -1,8 +1,12 @@
 using System.Reflection;
+using Mediator;
 using NetArchTest.Rules;
 using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Security;
+using OpenRAG.Application.Abstractions.Storage;
 using OpenRAG.Application.Abstractions.Vector;
+using OpenRAG.Application.Pipeline;
+using OpenRAG.Application.Pipeline.Behaviors;
 using OpenRAG.Application.Processing.ChunkDocument;
 using OpenRAG.Application.Processing.GenerateEmbeddings;
 using OpenRAG.Application.Processing.GenerateIntelligence;
@@ -87,6 +91,102 @@ public class DependencyRuleTests
         => Types.InAssembly(ApplicationAssembly)
             .ShouldNot().HaveDependencyOn("Microsoft.AspNetCore")
             .GetResult().ShouldSucceed();
+
+    [Fact]
+    public void Every_application_request_is_explicitly_classified_as_command_or_query()
+    {
+        var requestTypes = ApplicationAssembly.GetTypes()
+            .Where(type => type.IsClass && !type.IsAbstract)
+            .Where(type => type.GetInterfaces().Any(contract =>
+                contract.IsGenericType
+                && contract.GetGenericTypeDefinition() == typeof(IRequest<>)))
+            .ToArray();
+
+        Assert.Equal(17, requestTypes.Length);
+        Assert.All(requestTypes, requestType =>
+        {
+            Assert.True(typeof(IOpenRagMessage).IsAssignableFrom(requestType));
+            var isCommand = typeof(IOpenRagCommand).IsAssignableFrom(requestType);
+            var isQuery = typeof(IOpenRagQuery).IsAssignableFrom(requestType);
+            Assert.NotEqual(isCommand, isQuery);
+        });
+    }
+
+    [Fact]
+    public void Worker_processing_messages_use_explicit_tenant_contract_not_authenticated_context()
+    {
+        Type[] commandTypes =
+        [
+            typeof(PreprocessDocumentCommand),
+            typeof(ChunkDocumentCommand),
+            typeof(GenerateIntelligenceCommand),
+            typeof(GenerateEmbeddingsCommand)
+        ];
+
+        Assert.All(commandTypes, commandType =>
+        {
+            Assert.True(typeof(IExplicitTenantMessage).IsAssignableFrom(commandType));
+            Assert.True(typeof(ICorrelatedMessage).IsAssignableFrom(commandType));
+            Assert.False(typeof(IAuthenticatedApplicationMessage).IsAssignableFrom(commandType));
+        });
+    }
+
+    [Fact]
+    public void Authenticated_http_messages_do_not_expose_tenant_selection()
+    {
+        var authenticatedMessages = ApplicationAssembly.GetTypes()
+            .Where(type => type.IsClass)
+            .Where(type => typeof(IAuthenticatedApplicationMessage).IsAssignableFrom(type))
+            .ToArray();
+
+        Assert.Equal(12, authenticatedMessages.Length);
+        Assert.All(
+            authenticatedMessages,
+            messageType => Assert.Null(messageType.GetProperty("TenantId")));
+    }
+
+    [Fact]
+    public void Generic_pipeline_behaviors_live_in_application_and_have_no_resource_dependencies()
+    {
+        var behaviorTypes = ApplicationAssembly.GetTypes()
+            .Where(type => type.IsClass && !type.IsAbstract)
+            .Where(type => type.GetInterfaces().Any(contract =>
+                contract.IsGenericType
+                && contract.GetGenericTypeDefinition() == typeof(IPipelineBehavior<,>)))
+            .ToArray();
+
+        Assert.Equal(5, behaviorTypes.Length);
+        Assert.All(behaviorTypes, behaviorType =>
+        {
+            Assert.StartsWith("OpenRAG.Application.Pipeline", behaviorType.Namespace, StringComparison.Ordinal);
+            var parameters = behaviorType.GetConstructors()
+                .SelectMany(constructor => constructor.GetParameters())
+                .ToArray();
+
+            Assert.DoesNotContain(parameters, parameter => parameter.ParameterType == typeof(IUnitOfWork));
+            Assert.DoesNotContain(parameters, parameter => parameter.ParameterType == typeof(IFileStorage));
+            Assert.DoesNotContain(parameters, parameter => parameter.ParameterType == typeof(IVectorSearchService));
+            Assert.DoesNotContain(
+                parameters,
+                parameter => parameter.ParameterType.Namespace == "OpenRAG.Application.Abstractions.Persistence");
+        });
+    }
+
+    [Fact]
+    public void Worker_tenant_behavior_has_no_ambient_tenant_or_http_dependency()
+    {
+        var parameters = typeof(ExplicitTenantMessageBehavior<,>)
+            .GetConstructors()
+            .SelectMany(constructor => constructor.GetParameters())
+            .ToArray();
+
+        Assert.DoesNotContain(parameters, parameter => parameter.ParameterType == typeof(ICurrentTenant));
+        Assert.DoesNotContain(
+            parameters,
+            parameter => parameter.ParameterType.Namespace?.StartsWith(
+                "Microsoft.AspNetCore.Http",
+                StringComparison.Ordinal) == true);
+    }
 
     // ── Infrastructure rules ──────────────────────────────────────
 

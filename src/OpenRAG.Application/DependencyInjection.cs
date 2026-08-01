@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using OpenRAG.Application.Abstractions.Storage;
+using OpenRAG.Application.Pipeline.Validation;
 using OpenRAG.Application.Storage;
 
 namespace OpenRAG.Application;
@@ -13,6 +14,7 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
         services.AddSingleton<IDocumentObjectKeyPolicy, DocumentObjectKeyPolicy>();
+        services.AddOpenRagMessageValidators();
         return services;
     }
 }

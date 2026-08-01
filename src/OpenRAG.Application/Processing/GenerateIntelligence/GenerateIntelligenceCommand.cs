@@ -1,4 +1,4 @@
-using Mediator;
+using OpenRAG.Application.Pipeline;
 
 namespace OpenRAG.Application.Processing.GenerateIntelligence;
 
@@ -8,7 +8,9 @@ public sealed record GenerateIntelligenceCommand(
     Guid VersionId,
     Guid ProcessingRunId,
     string CorrelationId
-) : IRequest<GenerateIntelligenceResponse>;
+) : IOpenRagCommand<GenerateIntelligenceResponse>,
+    IExplicitTenantMessage,
+    ICorrelatedMessage;
 
 public sealed record GenerateIntelligenceResponse(
     Guid DocumentId,
