@@ -49,6 +49,14 @@ jobs:
       - name: Restore
         run: dotnet restore OpenRAG.slnx
 
+      - name: Audit NuGet dependencies
+        shell: pwsh
+        run: ./scripts/dependency-audit.ps1
+
+      - name: Validate dependency audit gate
+        shell: pwsh
+        run: ./scripts/dependency-audit.tests.ps1
+
       - name: Build
         run: dotnet build OpenRAG.slnx --configuration Release --no-restore -p:ContinuousIntegrationBuild=true
 
