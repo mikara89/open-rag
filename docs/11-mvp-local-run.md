@@ -132,7 +132,7 @@ Start a local server on `http://localhost:1234` with an embedding model loaded (
 
 ```bash
 # Full static validation
-dotnet restore OpenRAG.slnx --locked-mode
+dotnet restore OpenRAG.slnx
 dotnet build OpenRAG.slnx --configuration Release --no-restore -p:ContinuousIntegrationBuild=true
 dotnet test OpenRAG.slnx --configuration Release --no-build \
   --logger trx \
@@ -155,7 +155,7 @@ dotnet format style OpenRAG.slnx --verify-no-changes --no-restore
 ./scripts/mvp-smoke-test.ps1 -Model "deepseek-chat" -ExpectedPreprocessor "DoclingServe"
 ```
 
-GitHub Actions runs locked restore, Release build, tests with TRX and Cobertura coverage output, both format checks, and documentation validation for pull requests and pushes to `main`. Test results and coverage are uploaded as separate artifacts. It does not start Aspire or run the live smoke test, so CI does not depend on PostgreSQL, RabbitMQ, Docling, external AI providers, local state, or secrets.
+GitHub Actions runs restore, Release build, tests with TRX and Cobertura coverage output, both format checks, and documentation validation for pull requests and pushes to `main`. `setup-dotnet` keys its NuGet cache from central package/build files, tool manifests, and project files because Aspire injects OS-specific packages that make one cross-platform lock file impractical. Test results and coverage are uploaded as separate artifacts. CI does not start Aspire or run the live smoke test, so it does not depend on PostgreSQL, RabbitMQ, Docling, external AI providers, local state, or secrets.
 
 ## Troubleshooting
 

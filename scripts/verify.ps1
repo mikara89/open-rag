@@ -36,7 +36,7 @@ New-Item -ItemType Directory -Force -Path $resolvedResultsDirectory | Out-Null
 
 # 1. Restore
 Write-Host "[1/4] dotnet restore..." -ForegroundColor Yellow
-dotnet restore $solution --locked-mode
+dotnet restore $solution
 if ($LASTEXITCODE -ne 0) { throw "Restore failed" }
 
 # 2. Build

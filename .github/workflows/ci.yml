@@ -40,10 +40,14 @@ jobs:
         with:
           dotnet-version: 10.0.110
           cache: true
-          cache-dependency-path: "**/packages.lock.json"
+          cache-dependency-path: |
+            Directory.Build.props
+            Directory.Packages.props
+            dotnet-tools.json
+            **/*.csproj
 
       - name: Restore
-        run: dotnet restore OpenRAG.slnx --locked-mode
+        run: dotnet restore OpenRAG.slnx
 
       - name: Build
         run: dotnet build OpenRAG.slnx --configuration Release --no-restore -p:ContinuousIntegrationBuild=true
