@@ -126,6 +126,8 @@ See [trusted tenant resolution](16-trusted-tenant-resolution.md) for the API/Wor
 
 Each processing handler performs tenant-scoped document, version, run, and step lookups and validates every returned tenant/document/version/run identity. Preprocessing and artifact consumers validate persisted storage keys before I/O; chunks, embeddings, intelligence rows, and downstream events are created with the command tenant. A missing row in the command tenant is an intentional idempotent no-op: the handler never retries without the tenant, and focused tests verify no storage, provider, persistence, or downstream-event call occurs.
 
+Reprocessing is replacement-safe. The API validates that at least one stage is selected and preserves current retrieval data when it schedules work. Chunk and embedding workers generate a complete replacement first, then delete the previous rows and insert the replacement inside the success transaction. Provider or chunker failure persists failure state without deleting the last working chunks or embeddings and without publishing the downstream success event. Intelligence generation follows the same generate-before-replace ordering.
+
 Optional but recommended:
 
 ```text

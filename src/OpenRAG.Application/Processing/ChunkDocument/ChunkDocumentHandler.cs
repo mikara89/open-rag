@@ -176,17 +176,7 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
                 DocumentObjectKind.Json);
         }
 
-        // 6. Clean up old chunks and embeddings before recreating (safe idempotency)
-        await _documentEmbeddingRepository.DeleteByVersionAsync(
-            tenantId, command.DocumentId, command.VersionId, cancellationToken);
-        await _documentChunkRepository.DeleteByVersionAsync(
-            tenantId, command.DocumentId, command.VersionId, cancellationToken);
-
-        _logger.LogInformation(
-            "Deleted old chunks/embeddings for version. DocumentId={DocumentId}, VersionId={VersionId}",
-            command.DocumentId, command.VersionId);
-
-        // 7. Create or reuse DocumentProcessingStep for Chunk
+        // 6. Create or reuse DocumentProcessingStep for Chunk
         var step = existingStep ?? DocumentProcessingStep.Create(
             Guid.NewGuid(),
             tenantId,
@@ -204,10 +194,10 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
             await _processingRunRepository.AddStepAsync(step, cancellationToken);
         }
 
-        // 8. Mark step as running (increments attempt count)
+        // 7. Mark step as running (increments attempt count)
         step.Start();
 
-        // 9. Read Markdown from IFileStorage
+        // 8. Read Markdown from IFileStorage
         string markdown;
         await using (var stream = await _fileStorage.OpenReadAsync(
             version.DoclingMarkdownObjectKey, cancellationToken))
@@ -216,7 +206,7 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
             markdown = await reader.ReadToEndAsync(cancellationToken);
         }
 
-        // 9b. Read Docling JSON artifact if available
+        // 8b. Read Docling JSON artifact if available
         string? doclingJson = null;
         if (!string.IsNullOrWhiteSpace(version.DoclingJsonObjectKey)
             && version.DoclingJsonObjectKey != "pending")
@@ -234,7 +224,7 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
             }
         }
 
-        // 10. Call IDocumentChunker
+        // 9. Generate the complete replacement set before deleting working retrieval data.
         IReadOnlyList<DocumentChunkingResultItem> chunkResults;
         try
         {
@@ -282,7 +272,7 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
                 Status: "Failed");
         }
 
-        // 11. Convert chunk results to DocumentChunk entities
+        // 10. Convert chunk results to DocumentChunk entities
         var documentChunks = chunkResults.Select(r => DocumentChunk.Create(
             id: Guid.NewGuid(),
             tenantId: tenantId,
@@ -296,19 +286,28 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
             sectionTitle: r.SectionTitle))
             .ToList();
 
-        // 12. Begin transaction
+        // 11. Begin transaction only after replacement generation succeeds.
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
-        // 13. Add chunks
+        // 12. Atomically replace old embeddings/chunks with the new chunk set.
+        await _documentEmbeddingRepository.DeleteByVersionAsync(
+            tenantId, command.DocumentId, command.VersionId, cancellationToken);
+        await _documentChunkRepository.DeleteByVersionAsync(
+            tenantId, command.DocumentId, command.VersionId, cancellationToken);
+
+        _logger.LogInformation(
+            "Replacing old chunks/embeddings for version. DocumentId={DocumentId}, VersionId={VersionId}",
+            command.DocumentId, command.VersionId);
+
         await _documentChunkRepository.AddRangeAsync(documentChunks, cancellationToken);
 
-        // 14. Mark step as completed
+        // 13. Mark step as completed
         step.MarkCompleted(chunkResults.LastOrDefault()?.ContentHash ?? "no-chunks");
 
-        // 15. SaveChanges
+        // 14. SaveChanges
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // 16. Publish DocumentChunkedEvent
+        // 15. Publish DocumentChunkedEvent
         var occurredAt = _clock.UtcNow;
         var chunkedEvent = new DocumentChunkedEvent(
             TenantId: tenantId,
@@ -321,7 +320,7 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
 
         await _eventBus.PublishAsync("document.chunked", chunkedEvent, cancellationToken);
 
-        // 17. Commit transaction
+        // 16. Commit transaction
         await transaction.CommitAsync(cancellationToken);
 
         _logger.LogInformation(

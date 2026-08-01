@@ -21,9 +21,6 @@ public sealed class ReprocessDocumentHandlerTests
     {
         return new ReprocessDocumentHandler(
             fakes.DocRepo,
-            fakes.ChunkRepo,
-            fakes.EmbeddingRepo,
-            fakes.IntelligenceRepo,
             fakes.RunRepo,
             fakes.EventBus,
             fakes.Tenant,
@@ -138,6 +135,33 @@ public sealed class ReprocessDocumentHandlerTests
         Assert.Equal("The document has no current version.", ex.Message);
     }
 
+    [Fact]
+    public async Task Rejects_all_false_stages_before_lookup_or_mutation()
+    {
+        var doc = CreateReadyDocument();
+        var originalStatus = doc.Status;
+        var fakes = new Fakes { Doc = doc, Version = GetCurrentVersion(doc) };
+        var handler = CreateHandler(fakes);
+        var command = CreateCommand(
+            forcePreprocess: false,
+            forceChunk: false,
+            forceIntelligence: false,
+            forceEmbeddings: false);
+
+        var ex = await Assert.ThrowsAsync<RequestValidationException>(
+            () => handler.Handle(command).AsTask());
+
+        Assert.Equal("At least one reprocessing stage must be selected.", ex.Message);
+        Assert.Equal(originalStatus, doc.Status);
+        Assert.False(fakes.DocRepo.GetForUpdateCalled);
+        Assert.Null(fakes.RunRepo.AddedRun);
+        Assert.False(fakes.ChunkRepo.DeleteCalled);
+        Assert.False(fakes.EmbeddingRepo.DeleteCalled);
+        Assert.False(fakes.IntelligenceRepo.DeleteCalled);
+        Assert.False(fakes.Uow.SaveChangesCalled);
+        Assert.Empty(fakes.EventBus.PublishedTopics);
+    }
+
     // ── Status transition tests ─────────────────────────────────────
 
     [Fact]
@@ -240,7 +264,7 @@ public sealed class ReprocessDocumentHandlerTests
     // ── Data cleanup tests ──────────────────────────────────────────
 
     [Fact]
-    public async Task Deletes_chunks_when_forceChunk_is_true()
+    public async Task Preserves_chunks_until_replacement_chunking_succeeds()
     {
         var doc = CreateReadyDocument();
         var version = GetCurrentVersion(doc);
@@ -251,12 +275,11 @@ public sealed class ReprocessDocumentHandlerTests
 
         await handler.Handle(command);
 
-        Assert.True(fakes.ChunkRepo.DeleteCalled);
-        Assert.Equal(version.Id, fakes.ChunkRepo.DeletedVersionId);
+        Assert.False(fakes.ChunkRepo.DeleteCalled);
     }
 
     [Fact]
-    public async Task Deletes_embeddings_when_forceEmbeddings_is_true()
+    public async Task Preserves_embeddings_until_replacement_generation_succeeds()
     {
         var doc = CreateReadyDocument();
         var version = GetCurrentVersion(doc);
@@ -267,8 +290,7 @@ public sealed class ReprocessDocumentHandlerTests
 
         await handler.Handle(command);
 
-        Assert.True(fakes.EmbeddingRepo.DeleteCalled);
-        Assert.Equal(version.Id, fakes.EmbeddingRepo.DeletedVersionId);
+        Assert.False(fakes.EmbeddingRepo.DeleteCalled);
     }
 
     [Fact]
@@ -434,10 +456,12 @@ public sealed class ReprocessDocumentHandlerTests
 
     private sealed class Fakes
     {
+        private FakeDocRepo? _docRepo;
+
         public Guid CurrentTenantId { get; set; } = TenantId;
         public Document? Doc { get; set; }
         public DocumentVersion? Version { get; set; }
-        public FakeDocRepo DocRepo => new(Doc, Version);
+        public FakeDocRepo DocRepo => _docRepo ??= new(Doc, Version);
         public FakeChunkRepo ChunkRepo { get; } = new();
         public FakeEmbeddingRepo EmbeddingRepo { get; } = new();
         public FakeIntelligenceRepo IntelligenceRepo { get; } = new();
@@ -445,13 +469,14 @@ public sealed class ReprocessDocumentHandlerTests
         public FakeEventBus EventBus { get; } = new();
         public StubTenant Tenant => new(CurrentTenantId);
         public StubClock Clock => new(Now);
-        public StubUow Uow => new();
+        public StubUow Uow { get; } = new();
     }
 
     private sealed class FakeDocRepo : IDocumentRepository
     {
         private readonly Document? _doc;
         private readonly DocumentVersion? _version;
+        public bool GetForUpdateCalled { get; private set; }
 
         public FakeDocRepo(Document? doc, DocumentVersion? version)
         {
@@ -462,8 +487,12 @@ public sealed class ReprocessDocumentHandlerTests
         public Task AddAsync(Document document, CancellationToken ct = default) => Task.CompletedTask;
         public Task<Document?> GetByIdAsync(Guid tid, Guid did, CancellationToken ct = default) => Task.FromResult(_doc);
         public Task<Document?> GetByIdWithVersionsAsync(Guid tid, Guid did, CancellationToken ct = default) => Task.FromResult(_doc);
-        public Task<Document?> GetByIdForUpdateAsync(Guid tid, Guid did, CancellationToken ct = default) =>
-            Task.FromResult(_doc is not null && _doc.TenantId == tid && _doc.Id == did ? _doc : null);
+        public Task<Document?> GetByIdForUpdateAsync(Guid tid, Guid did, CancellationToken ct = default)
+        {
+            GetForUpdateCalled = true;
+            return Task.FromResult(
+                _doc is not null && _doc.TenantId == tid && _doc.Id == did ? _doc : null);
+        }
         public Task<DocumentVersion?> GetVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) => Task.FromResult(_version);
         public Task<DocumentVersion?> GetVersionForUpdateAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) =>
             Task.FromResult(_version is not null
@@ -590,12 +619,18 @@ public sealed class ReprocessDocumentHandlerTests
 
     private sealed class StubUow : IUnitOfWork
     {
+        public bool SaveChangesCalled { get; private set; }
+
         public Task<IApplicationTransaction> BeginTransactionAsync(CancellationToken ct = default)
         {
             return Task.FromResult<IApplicationTransaction>(new StubTransaction());
         }
 
-        public Task SaveChangesAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public Task SaveChangesAsync(CancellationToken ct = default)
+        {
+            SaveChangesCalled = true;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class StubTransaction : IApplicationTransaction

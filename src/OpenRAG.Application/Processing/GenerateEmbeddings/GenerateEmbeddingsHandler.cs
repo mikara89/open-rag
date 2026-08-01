@@ -158,15 +158,7 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
             IsolationGuard.NonEmpty(chunk.Id, nameof(chunk.Id));
         }
 
-        // 6. Clean up old embeddings before recreating (safe idempotency)
-        await _documentEmbeddingRepository.DeleteByVersionAsync(
-            tenantId, command.DocumentId, command.VersionId, cancellationToken);
-
-        _logger.LogInformation(
-            "Deleted old embeddings for version. DocumentId={DocumentId}, VersionId={VersionId}",
-            command.DocumentId, command.VersionId);
-
-        // 7. Create or reuse processing step
+        // 6. Create or reuse processing step
         var step = existingStep ?? DocumentProcessingStep.Create(
             Guid.NewGuid(),
             tenantId,
@@ -184,10 +176,10 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
             await _processingRunRepository.AddStepAsync(step, cancellationToken);
         }
 
-        // 8. Mark step Running (increments attempt count)
+        // 7. Mark step Running (increments attempt count)
         step.Start();
 
-        // 9. Call IEmbeddingService for each chunk
+        // 8. Generate the complete replacement set before deleting working embeddings.
         var embeddings = new List<DocumentEmbedding>();
         string actualModel = _options.Model;
         int actualDimensions = 0;
@@ -255,25 +247,32 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
                 Status: "Failed");
         }
 
-        // 10. Begin transaction
+        // 9. Begin transaction only after all provider calls succeed.
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
-        // 11. Add embeddings
+        // 10. Atomically replace the old embeddings with the complete new set.
+        await _documentEmbeddingRepository.DeleteByVersionAsync(
+            tenantId, command.DocumentId, command.VersionId, cancellationToken);
+
+        _logger.LogInformation(
+            "Replacing old embeddings for version. DocumentId={DocumentId}, VersionId={VersionId}",
+            command.DocumentId, command.VersionId);
+
         await _documentEmbeddingRepository.AddRangeAsync(embeddings, cancellationToken);
 
-        // 11b. Mark document as Ready (last pipeline step succeeded)
+        // 10b. Mark document as Ready (last pipeline step succeeded)
         if (document.Status == DocumentStatus.Processing)
         {
             document.MarkReady();
         }
 
-        // 12. Mark step completed
+        // 11. Mark step completed
         step.MarkCompleted(actualModel);
 
-        // 13. SaveChanges
+        // 12. SaveChanges
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // 14. Publish DocumentEmbeddingsGeneratedEvent
+        // 13. Publish DocumentEmbeddingsGeneratedEvent
         var occurredAt = _clock.UtcNow;
         var generatedEvent = new DocumentEmbeddingsGeneratedEvent(
             TenantId: tenantId,
@@ -288,7 +287,7 @@ public sealed class GenerateEmbeddingsHandler : IRequestHandler<GenerateEmbeddin
 
         await _eventBus.PublishAsync("document.embeddings.generated", generatedEvent, cancellationToken);
 
-        // 15. Commit transaction
+        // 14. Commit transaction
         await transaction.CommitAsync(cancellationToken);
 
         _logger.LogInformation(

@@ -14,9 +14,6 @@ namespace OpenRAG.Application.Documents.ReprocessDocument;
 public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocumentCommand, ReprocessDocumentResponse>
 {
     private readonly IDocumentRepository _documentRepository;
-    private readonly IDocumentChunkRepository _chunkRepository;
-    private readonly IDocumentEmbeddingRepository _embeddingRepository;
-    private readonly IDocumentIntelligenceRepository _intelligenceRepository;
     private readonly IProcessingRunRepository _processingRunRepository;
     private readonly IDocumentEventBus _eventBus;
     private readonly ICurrentTenant _currentTenant;
@@ -26,9 +23,6 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
 
     public ReprocessDocumentHandler(
         IDocumentRepository documentRepository,
-        IDocumentChunkRepository chunkRepository,
-        IDocumentEmbeddingRepository embeddingRepository,
-        IDocumentIntelligenceRepository intelligenceRepository,
         IProcessingRunRepository processingRunRepository,
         IDocumentEventBus eventBus,
         ICurrentTenant currentTenant,
@@ -37,9 +31,6 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
         IDocumentObjectKeyPolicy objectKeyPolicy)
     {
         _documentRepository = documentRepository;
-        _chunkRepository = chunkRepository;
-        _embeddingRepository = embeddingRepository;
-        _intelligenceRepository = intelligenceRepository;
         _processingRunRepository = processingRunRepository;
         _eventBus = eventBus;
         _currentTenant = currentTenant;
@@ -58,6 +49,15 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
 
         if (string.IsNullOrWhiteSpace(command.CorrelationId))
             throw new RequestValidationException("CorrelationId cannot be empty.");
+
+        if (!command.ForcePreprocess
+            && !command.ForceChunk
+            && !command.ForceIntelligence
+            && !command.ForceEmbeddings)
+        {
+            throw new RequestValidationException(
+                "At least one reprocessing stage must be selected.");
+        }
 
         var tenantId = _currentTenant.TenantId;
         if (tenantId == Guid.Empty)
@@ -142,31 +142,13 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
 
         await _processingRunRepository.AddAsync(processingRun, cancellationToken);
 
-        // 10. Delete old chunks if requested
-        if (command.ForceChunk)
-        {
-            await _chunkRepository.DeleteByVersionAsync(
-                tenantId, command.DocumentId, versionId, cancellationToken);
-        }
+        // 10. Keep existing generated data available until each worker has produced
+        // a complete replacement and can swap it inside its persistence transaction.
 
-        // 11. Delete old intelligence if requested
-        if (command.ForceIntelligence)
-        {
-            await _intelligenceRepository.DeleteByVersionAsync(
-                tenantId, command.DocumentId, versionId, cancellationToken);
-        }
-
-        // 12. Delete old embeddings if requested
-        if (command.ForceEmbeddings)
-        {
-            await _embeddingRepository.DeleteByVersionAsync(
-                tenantId, command.DocumentId, versionId, cancellationToken);
-        }
-
-        // 13. Save EF changes
+        // 11. Save EF changes
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // 14. Publish the correct starting event based on flags
+        // 12. Publish the correct starting event based on flags
         var occurredAt = _clock.UtcNow;
 
         if (command.ForcePreprocess)
@@ -222,7 +204,7 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
             await _eventBus.PublishAsync("document.embeddings.requested", embeddingsRequested, cancellationToken);
         }
 
-        // 14. Commit transaction
+        // 13. Commit transaction
         await transaction.CommitAsync(cancellationToken);
 
         return new ReprocessDocumentResponse(

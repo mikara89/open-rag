@@ -184,6 +184,29 @@ public sealed class GenerateEmbeddingsHandlerTests
     }
 
     [Fact]
+    public async Task Preserves_existing_embeddings_when_provider_fails_after_partial_generation()
+    {
+        var fakes = CreateFakes(hasEmbeddings: true);
+        fakes.EmbeddingService.FailOnCall = 2;
+        var handler = CreateHandler(fakes);
+        var cmd = new GenerateEmbeddingsCommand(TenantId, DocId, VerId, RunId, "corr");
+
+        var response = await handler.Handle(cmd);
+
+        Assert.Equal("Failed", response.Status);
+        Assert.Equal(2, fakes.EmbeddingService.CallCount);
+        Assert.False(fakes.EmbeddingRepo.DeleteCalled);
+        Assert.False(fakes.EmbeddingRepo.EmbeddingsAdded);
+        Assert.True(fakes.EmbeddingRepo.HasExistingEmbeddings);
+        Assert.Equal(
+            DocumentProcessingStepStatus.Failed,
+            Assert.IsType<DocumentProcessingStep>(fakes.RunRepo.AddedStep).Status);
+        Assert.True(fakes.UnitOfWork.SaveChangesCalled);
+        Assert.True(fakes.UnitOfWork.TransactionCommitted);
+        Assert.Null(fakes.EventBus.LastEvent);
+    }
+
+    [Fact]
     public async Task Deletes_old_embeddings_and_recreates_when_embeddings_exist()
     {
         var fakes = CreateFakes(hasEmbeddings: true);
@@ -192,9 +215,10 @@ public sealed class GenerateEmbeddingsHandlerTests
 
         var response = await handler.Handle(cmd);
 
-        // Old embeddings are deleted then new ones created
         Assert.Equal("Embedded", response.Status);
         Assert.True(fakes.EmbeddingService.CallCount > 0);
+        Assert.True(fakes.EmbeddingRepo.DeleteCalled);
+        Assert.True(fakes.EmbeddingRepo.EmbeddingsAdded);
     }
 
     // ══ Helpers ═══════════════════════════════════════════════════
@@ -318,6 +342,8 @@ public sealed class GenerateEmbeddingsHandlerTests
     {
         private readonly bool _hasEmbeddings;
         public bool EmbeddingsAdded { get; private set; }
+        public bool DeleteCalled { get; private set; }
+        public bool HasExistingEmbeddings => _hasEmbeddings && !DeleteCalled;
         public IReadOnlyCollection<DocumentEmbedding> AddedEmbeddings { get; private set; } = Array.Empty<DocumentEmbedding>();
 
         public FakeEmbeddingRepo(bool hasEmbeddings = false) => _hasEmbeddings = hasEmbeddings;
@@ -342,7 +368,10 @@ public sealed class GenerateEmbeddingsHandlerTests
             => Task.FromResult<DocumentEmbeddingMetadata?>(null);
 
         public Task DeleteByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
-            => Task.CompletedTask;
+        {
+            DeleteCalled = true;
+            return Task.CompletedTask;
+        }
 
         public Task<ChunkListResult> ListByVersionAsync(Guid tid, Guid did, Guid vid, int pn, int ps, string? s, string? st, int? pf, CancellationToken ct = default)
             => Task.FromResult(new ChunkListResult(Array.Empty<DocumentChunk>(), pn, ps, 0));
@@ -354,12 +383,17 @@ public sealed class GenerateEmbeddingsHandlerTests
     private sealed class FakeRunRepo : IProcessingRunRepository
     {
         private readonly DocumentProcessingRun? _run;
+        public DocumentProcessingStep? AddedStep { get; private set; }
         public FakeRunRepo(DocumentProcessingRun? run) => _run = run;
 
         public Task AddAsync(DocumentProcessingRun r, CancellationToken ct = default) => Task.CompletedTask;
         public Task<DocumentProcessingRun?> GetByIdAsync(Guid tid, Guid rid, CancellationToken ct = default) => Task.FromResult<DocumentProcessingRun?>(null);
         public Task<DocumentProcessingRun?> GetByIdForUpdateAsync(Guid tid, Guid rid, CancellationToken ct = default) => Task.FromResult(_run);
-        public Task AddStepAsync(DocumentProcessingStep s, CancellationToken ct = default) => Task.CompletedTask;
+        public Task AddStepAsync(DocumentProcessingStep s, CancellationToken ct = default)
+        {
+            AddedStep = s;
+            return Task.CompletedTask;
+        }
         public Task<DocumentProcessingStep?> GetStepAsync(Guid tid, Guid rid, DocumentProcessingStepName sn, CancellationToken ct = default) => Task.FromResult<DocumentProcessingStep?>(null);
         public Task<DocumentProcessingStep?> GetStepForUpdateAsync(Guid tid, Guid rid, DocumentProcessingStepName sn, CancellationToken ct = default) => Task.FromResult<DocumentProcessingStep?>(null);
         public Task<IReadOnlyList<DocumentProcessingRun>> GetRunsByDocumentAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
@@ -373,12 +407,14 @@ public sealed class GenerateEmbeddingsHandlerTests
         public int CallCount { get; set; }
         public List<EmbeddingRequest> Requests { get; } = new();
         public bool ShouldThrow { get; set; }
+        public int? FailOnCall { get; set; }
 
         public Task<EmbeddingResult> GenerateEmbeddingAsync(EmbeddingRequest request, CancellationToken ct = default)
         {
             CallCount++;
             Requests.Add(request);
-            if (ShouldThrow) throw new InvalidOperationException("Simulated embedding failure");
+            if (ShouldThrow || CallCount == FailOnCall)
+                throw new InvalidOperationException("Simulated embedding failure");
 
             var vector = Enumerable.Repeat(0.125f, 8).ToArray();
             return Task.FromResult(new EmbeddingResult(
