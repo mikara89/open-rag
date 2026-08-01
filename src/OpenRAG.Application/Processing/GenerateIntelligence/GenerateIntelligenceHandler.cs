@@ -6,7 +6,6 @@ using Microsoft.Extensions.Options;
 using OpenRAG.Application.Abstractions.AI;
 using OpenRAG.Application.Abstractions.Messaging;
 using OpenRAG.Application.Abstractions.Persistence;
-using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Storage;
 using OpenRAG.Application.Abstractions.Time;
 using OpenRAG.Application.Common;
@@ -19,7 +18,6 @@ namespace OpenRAG.Application.Processing.GenerateIntelligence;
 public sealed class GenerateIntelligenceHandler
     : IRequestHandler<GenerateIntelligenceCommand, GenerateIntelligenceResponse>
 {
-    private readonly ICurrentTenant _currentTenant;
     private readonly IDocumentRepository _documentRepository;
     private readonly IDocumentIntelligenceRepository _intelligenceRepository;
     private readonly IProcessingRunRepository _processingRunRepository;
@@ -32,7 +30,6 @@ public sealed class GenerateIntelligenceHandler
     private readonly ILogger<GenerateIntelligenceHandler> _logger;
 
     public GenerateIntelligenceHandler(
-        ICurrentTenant currentTenant,
         IDocumentRepository documentRepository,
         IDocumentIntelligenceRepository intelligenceRepository,
         IProcessingRunRepository processingRunRepository,
@@ -44,7 +41,6 @@ public sealed class GenerateIntelligenceHandler
         IOptions<GenerateIntelligenceOptions> options,
         ILogger<GenerateIntelligenceHandler> logger)
     {
-        _currentTenant = currentTenant;
         _documentRepository = documentRepository;
         _intelligenceRepository = intelligenceRepository;
         _processingRunRepository = processingRunRepository;
@@ -62,6 +58,9 @@ public sealed class GenerateIntelligenceHandler
         CancellationToken cancellationToken = default)
     {
         // 1. Validate command
+        if (command.TenantId == Guid.Empty)
+            throw new AppException("TenantId cannot be empty.");
+
         if (command.DocumentId == Guid.Empty)
             throw new AppException("DocumentId cannot be empty.");
         if (command.VersionId == Guid.Empty)
@@ -71,7 +70,7 @@ public sealed class GenerateIntelligenceHandler
         if (string.IsNullOrWhiteSpace(command.CorrelationId))
             throw new AppException("CorrelationId cannot be empty.");
 
-        var tenantId = _currentTenant.TenantId;
+        var tenantId = command.TenantId;
 
         // 2. Load processing run for update
         var run = await _processingRunRepository.GetByIdForUpdateAsync(

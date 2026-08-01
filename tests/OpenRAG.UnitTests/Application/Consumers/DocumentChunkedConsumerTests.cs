@@ -39,6 +39,7 @@ public sealed class DocumentChunkedConsumerTests
         Assert.NotNull(eventBus.LastEvent);
 
         var embeddingsEvent = Assert.IsType<DocumentEmbeddingsRequestedEvent>(eventBus.LastEvent);
+        Assert.Equal(message.TenantId, embeddingsEvent.TenantId);
         Assert.Equal(message.DocumentId, embeddingsEvent.DocumentId);
         Assert.Equal(message.VersionId, embeddingsEvent.VersionId);
         Assert.Equal(message.ProcessingRunId, embeddingsEvent.ProcessingRunId);
@@ -84,7 +85,8 @@ public sealed class DocumentChunkedConsumerTests
         await consumer.HandleAsync(message, CancellationToken.None);
 
         Assert.Equal("document.intelligence.requested", eventBus.LastTopic);
-        Assert.IsType<DocumentIntelligenceRequestedEvent>(eventBus.LastEvent);
+        var intelligenceEvent = Assert.IsType<DocumentIntelligenceRequestedEvent>(eventBus.LastEvent);
+        Assert.Equal(message.TenantId, intelligenceEvent.TenantId);
     }
 
     private sealed class FakeDocumentEventBus : IDocumentEventBus

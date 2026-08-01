@@ -64,4 +64,23 @@ public sealed class OpenApiEndpointTests
             "/openapi/{documentName}.json",
             out _));
     }
+
+    [Fact]
+    public async Task OpenApi_does_not_expose_tenant_as_request_data()
+    {
+        using var client = _factory.CreateHttpsClient();
+        using var response = await client.GetAsync("/openapi/v1.json", CancellationToken.None);
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync(CancellationToken.None);
+
+        Assert.DoesNotContain("X-Tenant-Id", json, StringComparison.OrdinalIgnoreCase);
+
+        using var document = JsonDocument.Parse(json);
+        var askOperation = document.RootElement
+            .GetProperty("paths")
+            .GetProperty("/api/rag/ask")
+            .GetProperty("post");
+        Assert.DoesNotContain("tenantId", askOperation.GetRawText(), StringComparison.OrdinalIgnoreCase);
+    }
 }

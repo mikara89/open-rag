@@ -7,7 +7,6 @@ using OpenRAG.Application.Abstractions.AI;
 using OpenRAG.Application.Abstractions.Messaging;
 using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Processing;
-using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Storage;
 using OpenRAG.Application.Abstractions.Time;
 using OpenRAG.Application.Abstractions.Vector;
@@ -19,7 +18,6 @@ using OpenRAG.Infrastructure.Persistence;
 using OpenRAG.Infrastructure.Persistence.Repositories;
 using OpenRAG.Infrastructure.Preprocessing;
 using OpenRAG.Infrastructure.Processing;
-using OpenRAG.Infrastructure.Security;
 using OpenRAG.Infrastructure.Storage;
 using OpenRAG.Infrastructure.Time;
 using OpenRAG.Infrastructure.VectorSearch;
@@ -89,9 +87,6 @@ public static class DependencyInjection
 
         // Messaging — CAP-backed event bus
         services.AddSingleton<IDocumentEventBus, CapDocumentEventBus>();
-
-        // Tenant security remains a development placeholder until P0.3.
-        services.AddScoped<ICurrentTenant, DevelopmentCurrentTenant>();
 
         // Preprocessing — provider selection via configuration
         services.Configure<DoclingPreprocessorOptions>(

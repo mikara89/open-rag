@@ -3,24 +3,24 @@ using Microsoft.Extensions.Options;
 
 namespace OpenRAG.Api.Security;
 
-public sealed class ValidUserIdentityRequirement : IAuthorizationRequirement;
+public sealed class ValidTenantIdentityRequirement : IAuthorizationRequirement;
 
-public sealed class ValidUserIdentityHandler : AuthorizationHandler<ValidUserIdentityRequirement>
+public sealed class ValidTenantIdentityHandler : AuthorizationHandler<ValidTenantIdentityRequirement>
 {
     private readonly IOptions<JwtAuthenticationOptions> _options;
 
-    public ValidUserIdentityHandler(IOptions<JwtAuthenticationOptions> options)
+    public ValidTenantIdentityHandler(IOptions<JwtAuthenticationOptions> options)
     {
         _options = options;
     }
 
     protected override Task HandleRequirementAsync(
         AuthorizationHandlerContext context,
-        ValidUserIdentityRequirement requirement)
+        ValidTenantIdentityRequirement requirement)
     {
         if (PrincipalIdentity.TryGetSingleNonEmptyGuidClaim(
                 context.User,
-                _options.Value.UserIdClaimType,
+                _options.Value.TenantIdClaimType,
                 out _))
         {
             context.Succeed(requirement);

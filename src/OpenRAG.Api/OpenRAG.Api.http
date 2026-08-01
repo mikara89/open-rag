@@ -1,9 +1,23 @@
 @OpenRAG.Api_HostAddress = https://localhost:7063
+# Token must contain exactly one non-empty GUID sub and tenant_id claim.
 @Token = <set-a-short-lived-access-token-locally>
 
 GET {{OpenRAG.Api_HostAddress}}/api/documents
 Accept: application/json
 Authorization: Bearer {{Token}}
+
+###
+
+POST {{OpenRAG.Api_HostAddress}}/api/rag/ask
+Content-Type: application/json
+Authorization: Bearer {{Token}}
+
+{
+  "question": "What is this document about?",
+  "documentIds": null,
+  "topK": 5,
+  "model": "mock-chat"
+}
 
 ###
 

@@ -38,7 +38,6 @@ public sealed class ReprocessDocumentHandlerTests
         bool forceEmbeddings = true)
     {
         return new ReprocessDocumentCommand(
-            TenantId,
             DocumentId,
             forcePreprocess,
             forceChunk,
@@ -73,14 +72,14 @@ public sealed class ReprocessDocumentHandlerTests
     }
 
     [Fact]
-    public async Task Returns_error_when_document_belongs_to_different_tenant()
+    public async Task Uses_authenticated_tenant_when_document_belongs_to_different_tenant()
     {
         var doc = CreateReadyDocument();
         var otherTenantId = Guid.NewGuid();
-        var fakes = new Fakes { Doc = doc };
+        var fakes = new Fakes { Doc = doc, CurrentTenantId = otherTenantId };
 
         var handler = CreateHandler(fakes);
-        var command = new ReprocessDocumentCommand(otherTenantId, DocumentId, true, true, true, true, "corr-1");
+        var command = new ReprocessDocumentCommand(DocumentId, true, true, true, true, "corr-1");
 
         var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(command).AsTask());
         Assert.Contains("does not belong to tenant", ex.Message);
@@ -432,6 +431,7 @@ public sealed class ReprocessDocumentHandlerTests
 
     private sealed class Fakes
     {
+        public Guid CurrentTenantId { get; set; } = TenantId;
         public Document? Doc { get; set; }
         public DocumentVersion? Version { get; set; }
         public FakeDocRepo DocRepo => new(Doc, Version);
@@ -440,7 +440,7 @@ public sealed class ReprocessDocumentHandlerTests
         public FakeIntelligenceRepo IntelligenceRepo { get; } = new();
         public FakeRunRepo RunRepo { get; } = new();
         public FakeEventBus EventBus { get; } = new();
-        public StubTenant Tenant => new(TenantId);
+        public StubTenant Tenant => new(CurrentTenantId);
         public StubClock Clock => new(Now);
         public StubUow Uow => new();
     }

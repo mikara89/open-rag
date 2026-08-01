@@ -45,6 +45,7 @@ public sealed class AuthenticatedApiWebApplicationFactory : WebApplicationFactor
                 [$"{JwtAuthenticationOptions.SectionName}:Audience"] = Audience,
                 [$"{JwtAuthenticationOptions.SectionName}:RequireHttpsMetadata"] = "true",
                 [$"{JwtAuthenticationOptions.SectionName}:UserIdClaimType"] = OpenRagClaimTypes.UserId,
+                [$"{JwtAuthenticationOptions.SectionName}:TenantIdClaimType"] = OpenRagClaimTypes.TenantId,
                 [$"{JwtAuthenticationOptions.SectionName}:RoleClaimType"] = OpenRagClaimTypes.Role,
                 [$"{JwtAuthenticationOptions.SectionName}:ClockSkewSeconds"] = "60"
             });

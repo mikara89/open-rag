@@ -55,7 +55,9 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
         if (string.IsNullOrWhiteSpace(command.CorrelationId))
             throw new AppException("CorrelationId cannot be empty.");
 
-        var tenantId = command.TenantId;
+        var tenantId = _currentTenant.TenantId;
+        if (tenantId == Guid.Empty)
+            throw new AppException("Current tenant ID cannot be empty.");
 
         // 2. Load document for update (tracking query)
         var document = await _documentRepository.GetByIdForUpdateAsync(

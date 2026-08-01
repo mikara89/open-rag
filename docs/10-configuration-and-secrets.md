@@ -25,7 +25,7 @@ Aspire injects connection strings and service URLs as environment variables auto
 
 Build, unit, architecture, integration-model, format, and documentation checks do not require live PostgreSQL, RabbitMQ, Docling, or AI providers. GitHub CI does not start Aspire services or read developer-machine configuration.
 
-JWT Bearer authentication is configured separately under `Authentication:Jwt` and is required for API startup. Authority and Audience belong in environment variables or API user secrets, never committed settings. See [JWT authentication](15-authentication.md).
+JWT Bearer authentication is configured separately under `Authentication:Jwt` and is required for API startup. Authority and Audience belong in environment variables or API user secrets, never committed settings. `TenantIdClaimType` defaults to `tenant_id` and may be overridden as `Authentication__Jwt__TenantIdClaimType`; it selects the claim name, not a tenant value, and cannot be blank. The token must contain exactly one non-empty GUID under that claim. There is no tenant-value setting or validation bypass. See [JWT authentication](15-authentication.md) and [trusted tenant resolution](16-trusted-tenant-resolution.md).
 
 ## Provider matrix
 

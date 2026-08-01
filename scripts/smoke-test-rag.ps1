@@ -3,9 +3,9 @@
 # For the comprehensive MVP smoke test, run: ./scripts/mvp-smoke-test.ps1
 param(
     [string]$ApiBaseUrl = "https://localhost:7063",
+    [string]$Token = $env:OPENRAG_ACCESS_TOKEN,
     [string]$FilePath = "README.md",
     [string]$Question = "What is OpenRAG about?",
-    [string]$TenantId = "11111111-1111-1111-1111-111111111111",
     [string]$Model = "mock-chat",
     [string]$ExpectedPreprocessor = ""
 )
@@ -15,6 +15,11 @@ param(
 # The -ExpectedPreprocessor parameter warns if retrieved content looks like mock placeholder text.
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($Token)) {
+    throw "A JWT access token with valid user and tenant claims is required."
+}
+
 $uploadUrl = "$ApiBaseUrl/api/documents/upload"
 $statusUrlTemplate = "$ApiBaseUrl/api/documents/{0}/status"
 $ragUrl = "$ApiBaseUrl/api/rag/ask"
@@ -31,7 +36,7 @@ Write-Host ""
 
 # 1. Upload
 Write-Host "[1/4] Uploading document..." -ForegroundColor Yellow
-$upload = curl.exe -s -k $uploadUrl -F "file=@$FilePath;type=text/markdown" 2>&1
+$upload = curl.exe -s -k $uploadUrl -H "Authorization: Bearer $Token" -F "file=@$FilePath;type=text/markdown" 2>&1
 if (-not $upload) { throw "Upload failed - is the API running?" }
 $json = $upload | ConvertFrom-Json
 $docId = $json.documentId
@@ -47,7 +52,7 @@ $status = "Uploaded"
 while ($elapsed -lt $maxWait -and $status -ne "Ready" -and $status -ne "Failed") {
     Start-Sleep -Seconds 3
     $elapsed += 3
-    $statusResp = curl.exe -s -k $statusUrl 2>&1
+    $statusResp = curl.exe -s -k $statusUrl -H "Authorization: Bearer $Token" 2>&1
     $statusObj = $statusResp | ConvertFrom-Json
     $status = $statusObj.status
     Write-Host "  ${elapsed}s: $status"
@@ -61,7 +66,7 @@ if ($status -eq "Failed") {
 # 3. Show detailed status
 Write-Host ""
 Write-Host "[3/4] Document status:" -ForegroundColor Yellow
-$statusResp = curl.exe -s -k $statusUrl 2>&1
+$statusResp = curl.exe -s -k $statusUrl -H "Authorization: Bearer $Token" 2>&1
 $statusJson = $statusResp | ConvertFrom-Json | ConvertTo-Json -Depth 5
 Write-Host $statusJson
 
@@ -85,8 +90,8 @@ if ($statusObj.versions -and $statusObj.versions.Count -gt 0) {
 # 4. RAG Ask
 Write-Host ""
 Write-Host "[4/4] RAG Ask (model: $Model)..." -ForegroundColor Yellow
-$body = @{ question = $Question; tenantId = $TenantId; topK = 3; model = $Model } | ConvertTo-Json -Compress
-$ragResp = curl.exe -s -k -X POST $ragUrl -H "Content-Type: application/json" -d $body 2>&1
+$body = @{ question = $Question; topK = 3; model = $Model } | ConvertTo-Json -Compress
+$ragResp = curl.exe -s -k -X POST $ragUrl -H "Authorization: Bearer $Token" -H "Content-Type: application/json" -d $body 2>&1
 $ragJson = $ragResp | ConvertFrom-Json -Depth 3
 
 Write-Host ""

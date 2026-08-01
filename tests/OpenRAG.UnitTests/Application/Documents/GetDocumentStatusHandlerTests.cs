@@ -17,7 +17,7 @@ public sealed class GetDocumentStatusHandlerTests
     {
         var fakes = CreateFakes();
         var handler = CreateHandler(fakes);
-        var query = new GetDocumentStatusQuery(fakes.Document.Id, TenantId);
+        var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
         var response = await handler.Handle(query);
 
@@ -31,7 +31,7 @@ public sealed class GetDocumentStatusHandlerTests
     {
         var fakes = CreateFakes();
         var handler = CreateHandler(fakes);
-        var query = new GetDocumentStatusQuery(fakes.Document.Id, TenantId);
+        var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
         var response = await handler.Handle(query);
 
@@ -44,7 +44,7 @@ public sealed class GetDocumentStatusHandlerTests
     {
         var fakes = CreateFakes(chunkCount: 5);
         var handler = CreateHandler(fakes);
-        var query = new GetDocumentStatusQuery(fakes.Document.Id, TenantId);
+        var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
         var response = await handler.Handle(query);
 
@@ -56,7 +56,7 @@ public sealed class GetDocumentStatusHandlerTests
     {
         var fakes = CreateFakes(embeddingCount: 3);
         var handler = CreateHandler(fakes);
-        var query = new GetDocumentStatusQuery(fakes.Document.Id, TenantId);
+        var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
         var response = await handler.Handle(query);
 
@@ -68,7 +68,7 @@ public sealed class GetDocumentStatusHandlerTests
     {
         var fakes = CreateFakes(embeddingCount: 2, embeddingProvider: "mock", embeddingModel: "mock-8", embeddingDimensions: 8);
         var handler = CreateHandler(fakes);
-        var query = new GetDocumentStatusQuery(fakes.Document.Id, TenantId);
+        var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
         var response = await handler.Handle(query);
 
@@ -82,7 +82,7 @@ public sealed class GetDocumentStatusHandlerTests
     {
         var fakes = CreateFakes();
         var handler = CreateHandler(fakes);
-        var query = new GetDocumentStatusQuery(fakes.Document.Id, TenantId);
+        var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
         var response = await handler.Handle(query);
 
@@ -94,7 +94,7 @@ public sealed class GetDocumentStatusHandlerTests
     {
         var fakes = CreateFakes(preprocessed: true);
         var handler = CreateHandler(fakes);
-        var query = new GetDocumentStatusQuery(fakes.Document.Id, TenantId);
+        var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
         var response = await handler.Handle(query);
 
@@ -106,7 +106,7 @@ public sealed class GetDocumentStatusHandlerTests
     {
         var fakes = CreateFakes(preprocessed: true, chunkCount: 3);
         var handler = CreateHandler(fakes);
-        var query = new GetDocumentStatusQuery(fakes.Document.Id, TenantId);
+        var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
         var response = await handler.Handle(query);
 
@@ -118,7 +118,7 @@ public sealed class GetDocumentStatusHandlerTests
     {
         var fakes = CreateFakes(preprocessed: true, chunkCount: 3, embeddingCount: 3);
         var handler = CreateHandler(fakes);
-        var query = new GetDocumentStatusQuery(fakes.Document.Id, TenantId);
+        var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
         var response = await handler.Handle(query);
 
@@ -130,7 +130,7 @@ public sealed class GetDocumentStatusHandlerTests
     {
         var fakes = CreateFakes(preprocessed: true, chunkCount: 3, embeddingCount: 3);
         var handler = CreateHandler(fakes);
-        var query = new GetDocumentStatusQuery(fakes.Document.Id, TenantId);
+        var query = new GetDocumentStatusQuery(fakes.Document.Id);
 
         var response = await handler.Handle(query);
 
@@ -146,7 +146,7 @@ public sealed class GetDocumentStatusHandlerTests
         var fakes = CreateFakes(noDocument: true);
         var handler = CreateHandler(fakes);
 
-        var query = new GetDocumentStatusQuery(Guid.NewGuid(), TenantId);
+        var query = new GetDocumentStatusQuery(Guid.NewGuid());
 
         var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(query).AsTask());
         Assert.Contains("not found", ex.Message);
@@ -158,7 +158,7 @@ public sealed class GetDocumentStatusHandlerTests
         var fakes = CreateFakes();
         var handler = CreateHandler(fakes);
 
-        var query = new GetDocumentStatusQuery(Guid.Empty, TenantId);
+        var query = new GetDocumentStatusQuery(Guid.Empty);
 
         var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(query).AsTask());
         Assert.Contains("DocumentId", ex.Message);
@@ -175,7 +175,7 @@ public sealed class GetDocumentStatusHandlerTests
         var fakes = CreateFakes(runs: new[] { run });
         var handler = CreateHandler(fakes);
 
-        var response = await handler.Handle(new GetDocumentStatusQuery(fakes.Document.Id, TenantId));
+        var response = await handler.Handle(new GetDocumentStatusQuery(fakes.Document.Id));
 
         Assert.NotEmpty(response.ProcessingRuns);
         Assert.Equal(run.Id, response.ProcessingRuns[0].RunId);
@@ -199,7 +199,7 @@ public sealed class GetDocumentStatusHandlerTests
         });
         var handler = CreateHandler(fakes);
 
-        var response = await handler.Handle(new GetDocumentStatusQuery(fakes.Document.Id, TenantId));
+        var response = await handler.Handle(new GetDocumentStatusQuery(fakes.Document.Id));
 
         Assert.NotEmpty(response.ProcessingRuns);
         var runDto = response.ProcessingRuns[0];
@@ -213,7 +213,7 @@ public sealed class GetDocumentStatusHandlerTests
         var fakes = CreateFakes();
         var handler = CreateHandler(fakes);
 
-        var response = await handler.Handle(new GetDocumentStatusQuery(fakes.Document.Id, TenantId));
+        var response = await handler.Handle(new GetDocumentStatusQuery(fakes.Document.Id));
 
         Assert.Empty(response.ProcessingRuns);
     }

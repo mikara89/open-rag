@@ -55,18 +55,22 @@ public static class AuthenticationExtensions
                 policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme);
                 policy.RequireAuthenticatedUser();
                 policy.AddRequirements(new ValidUserIdentityRequirement());
+                policy.AddRequirements(new ValidTenantIdentityRequirement());
             })
             .AddPolicy(OpenRagPolicies.Administrator, policy =>
             {
                 policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme);
                 policy.RequireAuthenticatedUser();
                 policy.AddRequirements(new ValidUserIdentityRequirement());
+                policy.AddRequirements(new ValidTenantIdentityRequirement());
                 policy.RequireRole(OpenRagRoles.Administrator);
             });
 
         services.AddSingleton<IAuthorizationHandler, ValidUserIdentityHandler>();
+        services.AddSingleton<IAuthorizationHandler, ValidTenantIdentityHandler>();
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
+        services.AddScoped<ICurrentTenant, HttpContextCurrentTenant>();
 
         return services;
     }

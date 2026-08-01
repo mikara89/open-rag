@@ -3,6 +3,7 @@ using Mediator;
 namespace OpenRAG.Application.Processing.GenerateEmbeddings;
 
 public sealed record GenerateEmbeddingsCommand(
+    Guid TenantId,
     Guid DocumentId,
     Guid VersionId,
     Guid ProcessingRunId,

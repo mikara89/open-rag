@@ -104,7 +104,6 @@ public sealed record DocumentPreprocessRequestedEvent(
     string OriginalObjectKey,
     string FileName,
     string MimeType,
-    string ContentHash,
     string CorrelationId,
     DateTimeOffset OccurredAt
 );
@@ -120,6 +119,10 @@ ProcessingRunId
 CorrelationId
 OccurredAt
 ```
+
+`TenantId` originates from the validated JWT tenant claim on the initial API request. The Worker has no HTTP tenant resolver or development fallback. Each CAP consumer copies the event tenant unchanged into the next processing command or event; preprocess, chunk, intelligence, and embedding handlers reject an empty tenant and use the command tenant for every scoped operation.
+
+See [trusted tenant resolution](16-trusted-tenant-resolution.md) for the API/Worker trust boundary. This explicit propagation does not replace the P0.4 resource-authorization and isolation audit.
 
 Optional but recommended:
 

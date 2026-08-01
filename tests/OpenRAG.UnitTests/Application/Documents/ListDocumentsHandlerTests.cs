@@ -22,7 +22,7 @@ public sealed class ListDocumentsHandlerTests
         var fakes = new Fakes(new DocumentListResult(items, 1, 20, 2));
         var handler = new ListDocumentsHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.Tenant);
 
-        var response = await handler.Handle(new ListDocumentsQuery(TenantId, 1, 20));
+        var response = await handler.Handle(new ListDocumentsQuery(1, 20));
 
         Assert.Equal(2, response.TotalCount);
         Assert.Equal(2, response.Items.Count);
@@ -35,7 +35,7 @@ public sealed class ListDocumentsHandlerTests
         var fakes = new Fakes(new DocumentListResult(Array.Empty<DocumentListItem>(), 1, 100, 0));
         var handler = new ListDocumentsHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.Tenant);
 
-        var response = await handler.Handle(new ListDocumentsQuery(TenantId, 1, 200));
+        var response = await handler.Handle(new ListDocumentsQuery(1, 200));
 
         Assert.True(response.PageSize <= 100);
     }
@@ -46,7 +46,7 @@ public sealed class ListDocumentsHandlerTests
         var fakes = new Fakes(new DocumentListResult(Array.Empty<DocumentListItem>(), 1, 20, 0));
         var handler = new ListDocumentsHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.Tenant);
 
-        var response = await handler.Handle(new ListDocumentsQuery(TenantId, -1, 20));
+        var response = await handler.Handle(new ListDocumentsQuery(-1, 20));
 
         Assert.Equal(1, response.PageNumber);
     }
@@ -63,7 +63,7 @@ public sealed class ListDocumentsHandlerTests
         var fakes = new Fakes(new DocumentListResult(items, 1, 20, 1));
         var handler = new ListDocumentsHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.Tenant);
 
-        var response = await handler.Handle(new ListDocumentsQuery(TenantId, 1, 20));
+        var response = await handler.Handle(new ListDocumentsQuery(1, 20));
 
         Assert.Equal(5, response.Items[0].ChunkCount);
         Assert.Equal(3, response.Items[0].EmbeddingCount);

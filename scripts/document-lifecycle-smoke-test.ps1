@@ -3,13 +3,22 @@
 # For the comprehensive MVP smoke test, run: ./scripts/mvp-smoke-test.ps1
 param(
     [string]$ApiBaseUrl = "https://localhost:7063",
+    [string]$Token = $env:OPENRAG_ACCESS_TOKEN,
     [string]$FilePath = "README.md",
     [string]$Question = "What is OpenRAG about?",
-    [string]$TenantId = "11111111-1111-1111-1111-111111111111",
     [string]$Model = "mock-chat"
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($Token)) {
+    throw "A JWT access token with valid user and tenant claims is required."
+}
+
+$authorizationHeaders = @{
+    Authorization = "Bearer $Token"
+}
+
 $uploadUrl = "$ApiBaseUrl/api/documents/upload"
 $listUrl = "$ApiBaseUrl/api/documents"
 $detailUrlTemplate = "$ApiBaseUrl/api/documents/{0}"
@@ -24,7 +33,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 
 # ── 1. List (should be empty or have existing docs) ────────────────
 Write-Host "[1/7] Listing documents..." -ForegroundColor Yellow
-$listBefore = Invoke-RestMethod -Uri "$listUrl?pageSize=5" -Method Get -SkipCertificateCheck
+$listBefore = Invoke-RestMethod -Uri "$listUrl?pageSize=5" -Method Get -Headers $authorizationHeaders -SkipCertificateCheck
 Write-Host "  Found $($listBefore.totalCount) document(s)" -ForegroundColor Green
 
 # ── 2. Upload ──────────────────────────────────────────────────────
@@ -37,7 +46,7 @@ $fileContent = [System.Net.Http.ByteArrayContent]::new($fileBytes)
 $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/octet-stream")
 $form['file'].Add($fileContent, "file", (Split-Path $FilePath -Leaf))
 
-$uploadResponse = Invoke-RestMethod -Uri $uploadUrl -Method Post -Form $form -SkipCertificateCheck
+$uploadResponse = Invoke-RestMethod -Uri $uploadUrl -Method Post -Form $form -Headers $authorizationHeaders -SkipCertificateCheck
 $documentId = $uploadResponse.documentId
 Write-Host "  DocumentId: $documentId" -ForegroundColor Green
 
@@ -49,7 +58,7 @@ $waited = 0
 do {
     Start-Sleep -Seconds 2
     $waited += 2
-    $status = Invoke-RestMethod -Uri $statusUrl -Method Get -SkipCertificateCheck
+    $status = Invoke-RestMethod -Uri $statusUrl -Method Get -Headers $authorizationHeaders -SkipCertificateCheck
     Write-Host "  Status: $($status.status) (${waited}s)" -ForegroundColor DarkGray
 } while ($status.status -ne "Ready" -and $status.status -ne "Failed" -and $waited -lt $maxWait)
 
@@ -61,7 +70,7 @@ Write-Host "  Document is Ready" -ForegroundColor Green
 
 # ── 4. List (should include the new doc) ───────────────────────────
 Write-Host "[4/7] Listing documents (should include new doc)..." -ForegroundColor Yellow
-$listAfter = Invoke-RestMethod -Uri "$listUrl?pageSize=10" -Method Get -SkipCertificateCheck
+$listAfter = Invoke-RestMethod -Uri "$listUrl?pageSize=10" -Method Get -Headers $authorizationHeaders -SkipCertificateCheck
 $found = $listAfter.items | Where-Object { $_.documentId -eq $documentId }
 if (-not $found) {
     Write-Host "  WARNING: New document not found in list" -ForegroundColor Magenta
@@ -72,7 +81,7 @@ if (-not $found) {
 # ── 5. Get detail ──────────────────────────────────────────────────
 Write-Host "[5/7] Getting document detail..." -ForegroundColor Yellow
 $detailUrl = $detailUrlTemplate -f $documentId
-$detail = Invoke-RestMethod -Uri $detailUrl -Method Get -SkipCertificateCheck
+$detail = Invoke-RestMethod -Uri $detailUrl -Method Get -Headers $authorizationHeaders -SkipCertificateCheck
 Write-Host "  FileName: $($detail.fileName)" -ForegroundColor Green
 Write-Host "  Status: $($detail.status)" -ForegroundColor Green
 if ($detail.latestVersion) {
@@ -87,18 +96,17 @@ if ($detail.latestVersion) {
 Write-Host "[6/7] Asking question..." -ForegroundColor Yellow
 $askBody = @{
     question = $Question
-    tenantId = $TenantId
     topK = 3
     model = $Model
 } | ConvertTo-Json
-$answer = Invoke-RestMethod -Uri $ragUrl -Method Post -Body $askBody -ContentType "application/json" -SkipCertificateCheck
+$answer = Invoke-RestMethod -Uri $ragUrl -Method Post -Body $askBody -ContentType "application/json" -Headers $authorizationHeaders -SkipCertificateCheck
 Write-Host "  Answer: $($answer.answer.Substring(0, [Math]::Min(80, $answer.answer.Length)))..." -ForegroundColor Green
 
 # ── 7. Delete ──────────────────────────────────────────────────────
 Write-Host "[7/7] Deleting document..." -ForegroundColor Yellow
 $deleteUrl = $deleteUrlTemplate -f $documentId
 try {
-    Invoke-RestMethod -Uri $deleteUrl -Method Delete -SkipCertificateCheck -StatusCodeVariable sc
+    Invoke-RestMethod -Uri $deleteUrl -Method Delete -Headers $authorizationHeaders -SkipCertificateCheck -StatusCodeVariable sc
     if ($sc -eq 204) {
         Write-Host "  Deleted (204 No Content)" -ForegroundColor Green
     } else {
@@ -111,7 +119,7 @@ try {
 
 # Verify gone
 try {
-    $null = Invoke-RestMethod -Uri $detailUrl -Method Get -SkipCertificateCheck
+    $null = Invoke-RestMethod -Uri $detailUrl -Method Get -Headers $authorizationHeaders -SkipCertificateCheck
     Write-Host "  WARNING: Document still accessible after delete" -ForegroundColor Magenta
 } catch {
     Write-Host "  Verified: Document no longer accessible" -ForegroundColor Green

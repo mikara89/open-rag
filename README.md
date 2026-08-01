@@ -25,6 +25,7 @@ The platform accepts files, stores originals through `IFileStorage`, preprocesse
 | [Documentation review checklist](docs/13-documentation-review-checklist.md) | PR guidance for deciding which docs must change |
 | [GitHub governance](docs/14-github-governance.md) | Recommended branch protection and emergency procedures |
 | [JWT authentication](docs/15-authentication.md) | JWT Bearer configuration, claim contract, policies, and local usage |
+| [Trusted tenant resolution](docs/16-trusted-tenant-resolution.md) | JWT tenant claims, API trust boundary, and Worker propagation |
 | [Security policy](SECURITY.md) | Supported status, vulnerability reporting, and known security limitations |
 | [ADR 0001](docs/adr/0001-use-clean-onion-with-vertical-slices.md) | Architecture style |
 | [ADR 0002](docs/adr/0002-use-aspire-for-local-development.md) | Aspire local development |
@@ -63,7 +64,7 @@ The platform accepts files, stores originals through `IFileStorage`, preprocesse
 | RAG ask | `POST /api/rag/ask` |
 | Provider diagnostics | `GET /api/system/providers` |
 | Document intelligence | `GET .../versions/{versionId}/intelligence` |
-| Authentication | JWT Bearer on every `/api` endpoint; GUID `sub` claim required by default |
+| Authentication | JWT Bearer on every `/api` endpoint; exactly one non-empty GUID `sub` and `tenant_id` claim required by default |
 | Administrator policy | `GET /api/system/providers` requires the `admin` role |
 | Development OpenAPI | Anonymous `GET /openapi/v1.json` only in Development |
 | Config validation | Startup-time `IValidateOptions<T>` |
@@ -77,9 +78,9 @@ The `MigrateEmbeddingVectorToPgvector` EF migration changes the embedding column
 
 ## Security boundary
 
-Every `/api` endpoint requires a validated JWT Bearer token. The default user-ID claim is `sub` and must contain exactly one non-empty GUID; `GET /api/system/providers` additionally requires the `admin` role. Configure `Authentication:Jwt:Authority` and `Authentication:Jwt:Audience` through environment variables or user secrets before starting the API. See [JWT authentication](docs/15-authentication.md).
+Every `/api` endpoint requires a validated JWT Bearer token. The default user-ID claim is `sub` and the default tenant claim is `tenant_id`; each must occur exactly once and contain a non-empty GUID. `GET /api/system/providers` additionally requires the `admin` role. Tenant identity comes only from the validated claim—there is no tenant header, request-body selection, or development fallback. Configure `Authentication:Jwt:Authority` and `Authentication:Jwt:Audience` through environment variables or user secrets before starting the API. See [JWT authentication](docs/15-authentication.md) and [trusted tenant resolution](docs/16-trusted-tenant-resolution.md).
 
-> **Authentication is implemented, but tenant identity is not yet trusted.** `DevelopmentCurrentTenant` and request-supplied RAG tenant selection remain temporary P0.3 blockers. The system is not production-safe for multitenant use.
+> **Trusted tenant resolution is complete, but multitenant authorization is not.** Full resource authorization, repository/storage/vector isolation auditing, and adversarial cross-tenant integration testing remain P0.4 and P0.5 work. The system is not yet production-safe for multitenant use.
 
 ## Quick validation
 

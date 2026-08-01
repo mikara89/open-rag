@@ -1,7 +1,6 @@
 using OpenRAG.Application.Abstractions.Messaging;
 using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Processing;
-using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Storage;
 using OpenRAG.Application.Abstractions.Time;
 using OpenRAG.Application.Common;
@@ -13,16 +12,26 @@ namespace OpenRAG.UnitTests.Application.Processing;
 
 public sealed class ChunkDocumentHandlerTests
 {
-    private static readonly Guid TenantId = Guid.NewGuid();
+    private static readonly Guid TenantId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static readonly Guid DocId = Guid.NewGuid();
     private static readonly Guid VerId = Guid.NewGuid();
     private static readonly Guid RunId = Guid.NewGuid();
 
     [Fact]
+    public async Task Rejects_empty_TenantId()
+    {
+        var handler = CreateHandler();
+        var cmd = new ChunkDocumentCommand(Guid.Empty, DocId, VerId, RunId, "corr");
+
+        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
+        Assert.Contains("TenantId", ex.Message);
+    }
+
+    [Fact]
     public async Task Rejects_empty_DocumentId()
     {
         var handler = CreateHandler();
-        var cmd = new ChunkDocumentCommand(Guid.Empty, VerId, RunId, "corr");
+        var cmd = new ChunkDocumentCommand(TenantId, Guid.Empty, VerId, RunId, "corr");
 
         var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
         Assert.Contains("DocumentId", ex.Message);
@@ -32,7 +41,7 @@ public sealed class ChunkDocumentHandlerTests
     public async Task Rejects_empty_VersionId()
     {
         var handler = CreateHandler();
-        var cmd = new ChunkDocumentCommand(DocId, Guid.Empty, RunId, "corr");
+        var cmd = new ChunkDocumentCommand(TenantId, DocId, Guid.Empty, RunId, "corr");
 
         var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
         Assert.Contains("VersionId", ex.Message);
@@ -42,7 +51,7 @@ public sealed class ChunkDocumentHandlerTests
     public async Task Rejects_empty_ProcessingRunId()
     {
         var handler = CreateHandler();
-        var cmd = new ChunkDocumentCommand(DocId, VerId, Guid.Empty, "corr");
+        var cmd = new ChunkDocumentCommand(TenantId, DocId, VerId, Guid.Empty, "corr");
 
         var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
         Assert.Contains("ProcessingRunId", ex.Message);
@@ -53,7 +62,7 @@ public sealed class ChunkDocumentHandlerTests
     {
         var fakes = CreateFakes(versionMissing: true);
         var handler = CreateHandler(fakes);
-        var cmd = new ChunkDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new ChunkDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         var response = await handler.Handle(cmd);
 
@@ -65,7 +74,7 @@ public sealed class ChunkDocumentHandlerTests
     {
         var fakes = CreateFakes(markdownMissing: true);
         var handler = CreateHandler(fakes);
-        var cmd = new ChunkDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new ChunkDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
         Assert.Contains("Markdown", ex.Message);
@@ -76,7 +85,7 @@ public sealed class ChunkDocumentHandlerTests
     {
         var fakes = CreateFakes(runMissing: true);
         var handler = CreateHandler(fakes);
-        var cmd = new ChunkDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new ChunkDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         var response = await handler.Handle(cmd);
 
@@ -88,7 +97,7 @@ public sealed class ChunkDocumentHandlerTests
     {
         var fakes = CreateFakes();
         var handler = CreateHandler(fakes);
-        var cmd = new ChunkDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new ChunkDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         await handler.Handle(cmd);
 
@@ -100,11 +109,12 @@ public sealed class ChunkDocumentHandlerTests
     {
         var fakes = CreateFakes();
         var handler = CreateHandler(fakes);
-        var cmd = new ChunkDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new ChunkDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         await handler.Handle(cmd);
 
         Assert.True(fakes.Chunker.Called);
+        Assert.Equal(TenantId, fakes.Chunker.LastRequest?.TenantId);
     }
 
     [Fact]
@@ -112,13 +122,14 @@ public sealed class ChunkDocumentHandlerTests
     {
         var fakes = CreateFakes();
         var handler = CreateHandler(fakes);
-        var cmd = new ChunkDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new ChunkDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         var response = await handler.Handle(cmd);
 
         Assert.Equal("Chunked", response.Status);
         Assert.True(response.ChunkCount > 0);
         Assert.True(fakes.ChunkRepo.ChunksAdded);
+        Assert.All(fakes.ChunkRepo.AddedChunks, chunk => Assert.Equal(TenantId, chunk.TenantId));
     }
 
     [Fact]
@@ -126,12 +137,13 @@ public sealed class ChunkDocumentHandlerTests
     {
         var fakes = CreateFakes();
         var handler = CreateHandler(fakes);
-        var cmd = new ChunkDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new ChunkDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         await handler.Handle(cmd);
 
         Assert.Equal("document.chunked", fakes.EventBus.LastTopic);
-        Assert.NotNull(fakes.EventBus.LastEvent);
+        var published = Assert.IsType<OpenRAG.Application.Messaging.Events.DocumentChunkedEvent>(fakes.EventBus.LastEvent);
+        Assert.Equal(TenantId, published.TenantId);
     }
 
     [Fact]
@@ -139,7 +151,7 @@ public sealed class ChunkDocumentHandlerTests
     {
         var fakes = CreateFakes();
         var handler = CreateHandler(fakes);
-        var cmd = new ChunkDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new ChunkDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         await handler.Handle(cmd);
 
@@ -152,7 +164,7 @@ public sealed class ChunkDocumentHandlerTests
         var fakes = CreateFakes();
         fakes.Chunker.ShouldThrow = true;
         var handler = CreateHandler(fakes);
-        var cmd = new ChunkDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new ChunkDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         await handler.Handle(cmd);
 
@@ -164,7 +176,7 @@ public sealed class ChunkDocumentHandlerTests
     {
         var fakes = CreateFakes(hasChunks: true);
         var handler = CreateHandler(fakes);
-        var cmd = new ChunkDocumentCommand(DocId, VerId, RunId, "corr");
+        var cmd = new ChunkDocumentCommand(TenantId, DocId, VerId, RunId, "corr");
 
         var response = await handler.Handle(cmd);
 
@@ -179,7 +191,7 @@ public sealed class ChunkDocumentHandlerTests
     {
         fakes ??= CreateFakes();
         return new ChunkDocumentHandler(
-            fakes.Tenant, fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo,
+            fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo,
             fakes.RunRepo, fakes.FileStorage, fakes.Chunker, fakes.EventBus, fakes.Clock, fakes.UnitOfWork,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<ChunkDocumentHandler>.Instance);
     }
@@ -190,8 +202,6 @@ public sealed class ChunkDocumentHandlerTests
         bool hasChunks = false,
         bool markdownMissing = false)
     {
-        var tenant = new StubTenant(TenantId);
-
         DocumentVersion? version = versionMissing ? null : CreateVersion(markdownMissing);
         var run = runMissing ? null : CreateRun();
 
@@ -205,7 +215,7 @@ public sealed class ChunkDocumentHandlerTests
         var clock = new StubClock();
         var uow = new FakeUoW();
 
-        return new AllFakes(tenant, docRepo, chunkRepo, embeddingRepo, runRepo, fileStorage, chunker, eventBus, clock, uow);
+        return new AllFakes(docRepo, chunkRepo, embeddingRepo, runRepo, fileStorage, chunker, eventBus, clock, uow);
     }
 
     private static DocumentVersion CreateVersion(bool markdownMissing = false)
@@ -225,7 +235,6 @@ public sealed class ChunkDocumentHandlerTests
             ProcessingRunReason.InitialUpload, "corr-123");
 
     private sealed record AllFakes(
-        StubTenant Tenant,
         FakeDocRepo DocRepo,
         FakeChunkRepo ChunkRepo,
         FakeEmbeddingRepo EmbeddingRepo,
@@ -237,12 +246,6 @@ public sealed class ChunkDocumentHandlerTests
         FakeUoW UnitOfWork);
 
     // ══ Stubs / Fakes ═════════════════════════════════════════════
-
-    private sealed class StubTenant : ICurrentTenant
-    {
-        public StubTenant(Guid id) => TenantId = id;
-        public Guid TenantId { get; }
-    }
 
     private sealed class StubClock : IClock
     {
@@ -274,12 +277,14 @@ public sealed class ChunkDocumentHandlerTests
     {
         private readonly bool _hasChunks;
         public bool ChunksAdded { get; private set; }
+        public IReadOnlyCollection<DocumentChunk> AddedChunks { get; private set; } = Array.Empty<DocumentChunk>();
 
         public FakeChunkRepo(bool hasChunks = false) => _hasChunks = hasChunks;
 
         public Task AddRangeAsync(IReadOnlyCollection<DocumentChunk> chunks, CancellationToken ct = default)
         {
             ChunksAdded = true;
+            AddedChunks = chunks;
             return Task.CompletedTask;
         }
 
@@ -349,12 +354,14 @@ public sealed class ChunkDocumentHandlerTests
     private sealed class FakeChunker : IDocumentChunker
     {
         public bool Called { get; private set; }
+        public DocumentChunkingRequest? LastRequest { get; private set; }
         public bool ShouldThrow { get; set; }
 
         public Task<IReadOnlyList<DocumentChunkingResultItem>> ChunkAsync(
             DocumentChunkingRequest request, CancellationToken ct = default)
         {
             Called = true;
+            LastRequest = request;
             if (ShouldThrow) throw new InvalidOperationException("Simulated chunking failure");
 
             return Task.FromResult<IReadOnlyList<DocumentChunkingResultItem>>(new[]

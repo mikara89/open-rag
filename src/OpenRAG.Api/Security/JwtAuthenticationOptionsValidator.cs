@@ -53,6 +53,11 @@ public sealed class JwtAuthenticationOptionsValidator : IValidateOptions<JwtAuth
             failures.Add($"{JwtAuthenticationOptions.SectionName}:UserIdClaimType cannot be blank.");
         }
 
+        if (string.IsNullOrWhiteSpace(options.TenantIdClaimType))
+        {
+            failures.Add($"{JwtAuthenticationOptions.SectionName}:TenantIdClaimType cannot be blank.");
+        }
+
         if (string.IsNullOrWhiteSpace(options.RoleClaimType))
         {
             failures.Add($"{JwtAuthenticationOptions.SectionName}:RoleClaimType cannot be blank.");

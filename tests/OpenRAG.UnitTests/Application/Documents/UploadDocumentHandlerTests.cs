@@ -151,6 +151,7 @@ public sealed class UploadDocumentHandlerTests
         await handler.Handle(command);
 
         Assert.NotNull(fakes.FileStorage.SavedObjectKey);
+        Assert.StartsWith($"tenants/{TenantId}/", fakes.FileStorage.SavedObjectKey, StringComparison.Ordinal);
         Assert.Contains("report.pdf", fakes.FileStorage.SavedObjectKey);
         Assert.Equal("application/pdf", fakes.FileStorage.SavedContentType);
     }
@@ -183,7 +184,8 @@ public sealed class UploadDocumentHandlerTests
         await handler.Handle(command);
 
         Assert.NotNull(fakes.ProcessingRunRepository.AddedRun);
-        Assert.Equal(ProcessingRunReason.InitialUpload, fakes.ProcessingRunRepository.AddedRun!.RunReason);
+        Assert.Equal(TenantId, fakes.ProcessingRunRepository.AddedRun!.TenantId);
+        Assert.Equal(ProcessingRunReason.InitialUpload, fakes.ProcessingRunRepository.AddedRun.RunReason);
         Assert.Equal("corr-123", fakes.ProcessingRunRepository.AddedRun.CorrelationId);
     }
 
@@ -199,7 +201,8 @@ public sealed class UploadDocumentHandlerTests
         await handler.Handle(command);
 
         Assert.Equal("document.uploaded", fakes.EventBus.LastTopic);
-        Assert.NotNull(fakes.EventBus.LastEvent);
+        var published = Assert.IsType<OpenRAG.Application.Messaging.Events.DocumentUploadedEvent>(fakes.EventBus.LastEvent);
+        Assert.Equal(TenantId, published.TenantId);
     }
 
     [Fact]

@@ -3,12 +3,12 @@ using OpenRAG.Application.Abstractions.Security;
 
 namespace OpenRAG.Api.Security;
 
-public sealed class HttpContextCurrentUser : ICurrentUser
+public sealed class HttpContextCurrentTenant : ICurrentTenant
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IOptions<JwtAuthenticationOptions> _options;
 
-    public HttpContextCurrentUser(
+    public HttpContextCurrentTenant(
         IHttpContextAccessor httpContextAccessor,
         IOptions<JwtAuthenticationOptions> options)
     {
@@ -16,23 +16,20 @@ public sealed class HttpContextCurrentUser : ICurrentUser
         _options = options;
     }
 
-    public bool IsAuthenticated =>
-        _httpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated == true;
-
-    public Guid UserId
+    public Guid TenantId
     {
         get
         {
             if (!PrincipalIdentity.TryGetSingleNonEmptyGuidClaim(
                     _httpContextAccessor.HttpContext?.User,
-                    _options.Value.UserIdClaimType,
-                    out var userId))
+                    _options.Value.TenantIdClaimType,
+                    out var tenantId))
             {
                 throw new InvalidOperationException(
-                    "A current user requires an authenticated principal with exactly one non-empty GUID user-ID claim.");
+                    "A valid authenticated tenant context is required.");
             }
 
-            return userId;
+            return tenantId;
         }
     }
 }

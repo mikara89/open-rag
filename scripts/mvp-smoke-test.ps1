@@ -19,7 +19,7 @@ reprocess, ask again, and delete.
 
 Parameters:
   -ApiBaseUrl          API base URL (default: https://localhost:7063)
-  -Token               JWT access token (defaults to OPENRAG_ACCESS_TOKEN)
+  -Token               JWT access token with GUID user/tenant claims and admin role (defaults to OPENRAG_ACCESS_TOKEN)
   -FilePath            Document to upload (default: README.md)
   -Model               Chat model for RAG ask (default: deepseek-chat)
   -Question            Question for RAG ask (default: "What is this document about?")
@@ -39,7 +39,7 @@ Examples:
 $ErrorActionPreference = "Stop"
 
 if ([string]::IsNullOrWhiteSpace($Token)) {
-    throw "A JWT access token is required. Pass -Token or set OPENRAG_ACCESS_TOKEN."
+    throw "A JWT access token with valid user, tenant, and admin claims is required. Pass -Token or set OPENRAG_ACCESS_TOKEN."
 }
 
 $authorizationHeaders = @{ Authorization = "Bearer $Token" }
@@ -299,7 +299,6 @@ Write-Host ""
 Write-Host "━━━ [11] RAG Ask (model: $Model) ━━━" -ForegroundColor Yellow
 $askBody = @{
     question   = $Question
-    tenantId   = "11111111-1111-1111-1111-111111111111"
     topK       = 3
     model      = $Model
 }

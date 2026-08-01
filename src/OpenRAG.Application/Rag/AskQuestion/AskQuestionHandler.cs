@@ -57,8 +57,7 @@ public sealed class AskQuestionHandler : IRequestHandler<AskQuestionQuery, AskQu
             throw new AppException("Model cannot be empty.");
         }
 
-        // Use the tenant from the query (API passes it)
-        var tenantId = query.TenantId;
+        var tenantId = _currentTenant.TenantId;
         if (tenantId == Guid.Empty)
         {
             throw new AppException("TenantId cannot be empty.");

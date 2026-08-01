@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenRAG.Api.Security;
 
@@ -82,6 +83,15 @@ public sealed class JwtAuthenticationOptionsValidatorTests
     }
 
     [Fact]
+    public void Rejects_blank_tenant_claim_name()
+    {
+        var options = ValidOptions();
+        options.TenantIdClaimType = " ";
+
+        AssertInvalid(options, "TenantIdClaimType cannot be blank");
+    }
+
+    [Fact]
     public void Rejects_negative_clock_skew()
     {
         var options = ValidOptions();
@@ -114,6 +124,7 @@ public sealed class JwtAuthenticationOptionsValidatorTests
 
         Assert.True(options.RequireHttpsMetadata);
         Assert.Equal(OpenRagClaimTypes.UserId, options.UserIdClaimType);
+        Assert.Equal(OpenRagClaimTypes.TenantId, options.TenantIdClaimType);
         Assert.Equal(OpenRagClaimTypes.Role, options.RoleClaimType);
         Assert.Equal(60, options.ClockSkewSeconds);
     }
@@ -122,6 +133,7 @@ public sealed class JwtAuthenticationOptionsValidatorTests
     public async Task Missing_required_configuration_fails_during_host_startup()
     {
         var builder = Host.CreateApplicationBuilder();
+        builder.Logging.ClearProviders();
         builder.Configuration[$"{JwtAuthenticationOptions.SectionName}:Authority"] = "";
         builder.Configuration[$"{JwtAuthenticationOptions.SectionName}:Audience"] = "";
         builder.Services.AddOpenRagAuthentication(builder.Configuration);
@@ -150,6 +162,7 @@ public sealed class JwtAuthenticationOptionsValidatorTests
         Audience = AuthenticatedApiWebApplicationFactory.Audience,
         RequireHttpsMetadata = true,
         UserIdClaimType = OpenRagClaimTypes.UserId,
+        TenantIdClaimType = OpenRagClaimTypes.TenantId,
         RoleClaimType = OpenRagClaimTypes.Role,
         ClockSkewSeconds = 60
     };

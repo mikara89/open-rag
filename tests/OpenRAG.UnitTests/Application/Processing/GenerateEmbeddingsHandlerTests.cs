@@ -2,7 +2,6 @@ using Microsoft.Extensions.Options;
 using OpenRAG.Application.Abstractions.AI;
 using OpenRAG.Application.Abstractions.Messaging;
 using OpenRAG.Application.Abstractions.Persistence;
-using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Time;
 using OpenRAG.Application.Common;
 using OpenRAG.Application.Processing.GenerateEmbeddings;
@@ -13,16 +12,26 @@ namespace OpenRAG.UnitTests.Application.Processing;
 
 public sealed class GenerateEmbeddingsHandlerTests
 {
-    private static readonly Guid TenantId = Guid.NewGuid();
+    private static readonly Guid TenantId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static readonly Guid DocId = Guid.NewGuid();
     private static readonly Guid VerId = Guid.NewGuid();
     private static readonly Guid RunId = Guid.NewGuid();
 
     [Fact]
+    public async Task Rejects_empty_TenantId()
+    {
+        var handler = CreateHandler();
+        var cmd = new GenerateEmbeddingsCommand(Guid.Empty, DocId, VerId, RunId, "corr");
+
+        var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
+        Assert.Contains("TenantId", ex.Message);
+    }
+
+    [Fact]
     public async Task Rejects_empty_DocumentId()
     {
         var handler = CreateHandler();
-        var cmd = new GenerateEmbeddingsCommand(Guid.Empty, VerId, RunId, "corr");
+        var cmd = new GenerateEmbeddingsCommand(TenantId, Guid.Empty, VerId, RunId, "corr");
 
         var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
         Assert.Contains("DocumentId", ex.Message);
@@ -32,7 +41,7 @@ public sealed class GenerateEmbeddingsHandlerTests
     public async Task Rejects_empty_VersionId()
     {
         var handler = CreateHandler();
-        var cmd = new GenerateEmbeddingsCommand(DocId, Guid.Empty, RunId, "corr");
+        var cmd = new GenerateEmbeddingsCommand(TenantId, DocId, Guid.Empty, RunId, "corr");
 
         var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
         Assert.Contains("VersionId", ex.Message);
@@ -42,7 +51,7 @@ public sealed class GenerateEmbeddingsHandlerTests
     public async Task Rejects_empty_ProcessingRunId()
     {
         var handler = CreateHandler();
-        var cmd = new GenerateEmbeddingsCommand(DocId, VerId, Guid.Empty, "corr");
+        var cmd = new GenerateEmbeddingsCommand(TenantId, DocId, VerId, Guid.Empty, "corr");
 
         var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
         Assert.Contains("ProcessingRunId", ex.Message);
@@ -53,7 +62,7 @@ public sealed class GenerateEmbeddingsHandlerTests
     {
         var fakes = CreateFakes(runMissing: true);
         var handler = CreateHandler(fakes);
-        var cmd = new GenerateEmbeddingsCommand(DocId, VerId, RunId, "corr");
+        var cmd = new GenerateEmbeddingsCommand(TenantId, DocId, VerId, RunId, "corr");
 
         var response = await handler.Handle(cmd);
 
@@ -65,7 +74,7 @@ public sealed class GenerateEmbeddingsHandlerTests
     {
         var fakes = CreateFakes(hasChunks: false);
         var handler = CreateHandler(fakes);
-        var cmd = new GenerateEmbeddingsCommand(DocId, VerId, RunId, "corr");
+        var cmd = new GenerateEmbeddingsCommand(TenantId, DocId, VerId, RunId, "corr");
 
         var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(cmd).AsTask());
         Assert.Contains("No chunks", ex.Message);
@@ -77,12 +86,13 @@ public sealed class GenerateEmbeddingsHandlerTests
         var fakes = CreateFakes();
         fakes.EmbeddingService.CallCount = 0;
         var handler = CreateHandler(fakes);
-        var cmd = new GenerateEmbeddingsCommand(DocId, VerId, RunId, "corr");
+        var cmd = new GenerateEmbeddingsCommand(TenantId, DocId, VerId, RunId, "corr");
 
         await handler.Handle(cmd);
 
         // We create 3 chunks in fake, so embedding should be called 3 times
         Assert.Equal(3, fakes.EmbeddingService.CallCount);
+        Assert.All(fakes.EmbeddingService.Requests, request => Assert.Equal(TenantId, request.TenantId));
     }
 
     [Fact]
@@ -90,13 +100,14 @@ public sealed class GenerateEmbeddingsHandlerTests
     {
         var fakes = CreateFakes();
         var handler = CreateHandler(fakes);
-        var cmd = new GenerateEmbeddingsCommand(DocId, VerId, RunId, "corr");
+        var cmd = new GenerateEmbeddingsCommand(TenantId, DocId, VerId, RunId, "corr");
 
         var response = await handler.Handle(cmd);
 
         Assert.Equal("Embedded", response.Status);
         Assert.True(response.EmbeddingCount > 0);
         Assert.True(fakes.EmbeddingRepo.EmbeddingsAdded);
+        Assert.All(fakes.EmbeddingRepo.AddedEmbeddings, embedding => Assert.Equal(TenantId, embedding.TenantId));
     }
 
     [Fact]
@@ -104,12 +115,13 @@ public sealed class GenerateEmbeddingsHandlerTests
     {
         var fakes = CreateFakes();
         var handler = CreateHandler(fakes);
-        var cmd = new GenerateEmbeddingsCommand(DocId, VerId, RunId, "corr");
+        var cmd = new GenerateEmbeddingsCommand(TenantId, DocId, VerId, RunId, "corr");
 
         await handler.Handle(cmd);
 
         Assert.Equal("document.embeddings.generated", fakes.EventBus.LastTopic);
-        Assert.NotNull(fakes.EventBus.LastEvent);
+        var published = Assert.IsType<OpenRAG.Application.Messaging.Events.DocumentEmbeddingsGeneratedEvent>(fakes.EventBus.LastEvent);
+        Assert.Equal(TenantId, published.TenantId);
     }
 
     [Fact]
@@ -117,7 +129,7 @@ public sealed class GenerateEmbeddingsHandlerTests
     {
         var fakes = CreateFakes();
         var handler = CreateHandler(fakes);
-        var cmd = new GenerateEmbeddingsCommand(DocId, VerId, RunId, "corr");
+        var cmd = new GenerateEmbeddingsCommand(TenantId, DocId, VerId, RunId, "corr");
 
         await handler.Handle(cmd);
 
@@ -130,7 +142,7 @@ public sealed class GenerateEmbeddingsHandlerTests
         var fakes = CreateFakes();
         fakes.EmbeddingService.ShouldThrow = true;
         var handler = CreateHandler(fakes);
-        var cmd = new GenerateEmbeddingsCommand(DocId, VerId, RunId, "corr");
+        var cmd = new GenerateEmbeddingsCommand(TenantId, DocId, VerId, RunId, "corr");
 
         await handler.Handle(cmd);
 
@@ -143,7 +155,7 @@ public sealed class GenerateEmbeddingsHandlerTests
         var fakes = CreateFakes();
         fakes.EmbeddingService.ShouldThrow = true;
         var handler = CreateHandler(fakes);
-        var cmd = new GenerateEmbeddingsCommand(DocId, VerId, RunId, "corr");
+        var cmd = new GenerateEmbeddingsCommand(TenantId, DocId, VerId, RunId, "corr");
 
         var response = await handler.Handle(cmd);
 
@@ -157,7 +169,7 @@ public sealed class GenerateEmbeddingsHandlerTests
     {
         var fakes = CreateFakes(hasEmbeddings: true);
         var handler = CreateHandler(fakes);
-        var cmd = new GenerateEmbeddingsCommand(DocId, VerId, RunId, "corr");
+        var cmd = new GenerateEmbeddingsCommand(TenantId, DocId, VerId, RunId, "corr");
 
         var response = await handler.Handle(cmd);
 
@@ -173,7 +185,7 @@ public sealed class GenerateEmbeddingsHandlerTests
         fakes ??= CreateFakes();
         var options = Options.Create(new GenerateEmbeddingsOptions { Model = "mock-embedding-8" });
         return new GenerateEmbeddingsHandler(
-            fakes.Tenant, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.DocRepo, fakes.RunRepo,
+            fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.DocRepo, fakes.RunRepo,
             fakes.EmbeddingService, fakes.EventBus, fakes.Clock, fakes.UnitOfWork, options,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<GenerateEmbeddingsHandler>.Instance);
     }
@@ -183,8 +195,6 @@ public sealed class GenerateEmbeddingsHandlerTests
         bool hasChunks = true,
         bool hasEmbeddings = false)
     {
-        var tenant = new StubTenant(TenantId);
-
         var chunksList = hasChunks
             ? new[]
             {
@@ -204,7 +214,7 @@ public sealed class GenerateEmbeddingsHandlerTests
         var clock = new StubClock();
         var uow = new FakeUoW();
 
-        return new AllFakes(tenant, chunkRepo, embeddingRepo, docRepo, runRepo,
+        return new AllFakes(chunkRepo, embeddingRepo, docRepo, runRepo,
             embeddingService, eventBus, clock, uow);
     }
 
@@ -213,7 +223,6 @@ public sealed class GenerateEmbeddingsHandlerTests
             ProcessingRunReason.InitialUpload, "corr-123");
 
     private sealed record AllFakes(
-        StubTenant Tenant,
         FakeChunkRepo ChunkRepo,
         FakeEmbeddingRepo EmbeddingRepo,
         FakeDocRepo DocRepo,
@@ -224,12 +233,6 @@ public sealed class GenerateEmbeddingsHandlerTests
         FakeUoW UnitOfWork);
 
     // ══ Stubs / Fakes ═════════════════════════════════════════════
-
-    private sealed class StubTenant : ICurrentTenant
-    {
-        public StubTenant(Guid id) => TenantId = id;
-        public Guid TenantId { get; }
-    }
 
     private sealed class StubClock : IClock
     {
@@ -288,12 +291,14 @@ public sealed class GenerateEmbeddingsHandlerTests
     {
         private readonly bool _hasEmbeddings;
         public bool EmbeddingsAdded { get; private set; }
+        public IReadOnlyCollection<DocumentEmbedding> AddedEmbeddings { get; private set; } = Array.Empty<DocumentEmbedding>();
 
         public FakeEmbeddingRepo(bool hasEmbeddings = false) => _hasEmbeddings = hasEmbeddings;
 
         public Task AddRangeAsync(IReadOnlyCollection<DocumentEmbedding> embeddings, CancellationToken ct = default)
         {
             EmbeddingsAdded = true;
+            AddedEmbeddings = embeddings;
             return Task.CompletedTask;
         }
 
@@ -339,11 +344,13 @@ public sealed class GenerateEmbeddingsHandlerTests
     private sealed class FakeEmbeddingService : IEmbeddingService
     {
         public int CallCount { get; set; }
+        public List<EmbeddingRequest> Requests { get; } = new();
         public bool ShouldThrow { get; set; }
 
         public Task<EmbeddingResult> GenerateEmbeddingAsync(EmbeddingRequest request, CancellationToken ct = default)
         {
             CallCount++;
+            Requests.Add(request);
             if (ShouldThrow) throw new InvalidOperationException("Simulated embedding failure");
 
             var vector = Enumerable.Repeat(0.125f, 8).ToArray();

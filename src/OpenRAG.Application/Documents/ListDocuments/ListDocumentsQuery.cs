@@ -3,7 +3,6 @@ using Mediator;
 namespace OpenRAG.Application.Documents.ListDocuments;
 
 public sealed record ListDocumentsQuery(
-    Guid TenantId,
     int PageNumber = 1,
     int PageSize = 20,
     string? Status = null,

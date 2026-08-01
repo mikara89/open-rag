@@ -3,7 +3,6 @@ using Mediator;
 namespace OpenRAG.Application.Documents.ReprocessDocument;
 
 public sealed record ReprocessDocumentCommand(
-    Guid TenantId,
     Guid DocumentId,
     bool ForcePreprocess,
     bool ForceChunk,

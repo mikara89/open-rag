@@ -4,7 +4,6 @@ using Microsoft.Extensions.Logging;
 using OpenRAG.Application.Abstractions.Messaging;
 using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Processing;
-using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Storage;
 using OpenRAG.Application.Abstractions.Time;
 using OpenRAG.Application.Common;
@@ -16,7 +15,6 @@ namespace OpenRAG.Application.Processing.ChunkDocument;
 
 public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand, ChunkDocumentResponse>
 {
-    private readonly ICurrentTenant _currentTenant;
     private readonly IDocumentRepository _documentRepository;
     private readonly IDocumentChunkRepository _documentChunkRepository;
     private readonly IDocumentEmbeddingRepository _documentEmbeddingRepository;
@@ -29,7 +27,6 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
     private readonly ILogger<ChunkDocumentHandler> _logger;
 
     public ChunkDocumentHandler(
-        ICurrentTenant currentTenant,
         IDocumentRepository documentRepository,
         IDocumentChunkRepository documentChunkRepository,
         IDocumentEmbeddingRepository documentEmbeddingRepository,
@@ -41,7 +38,6 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
         IUnitOfWork unitOfWork,
         ILogger<ChunkDocumentHandler> logger)
     {
-        _currentTenant = currentTenant;
         _documentRepository = documentRepository;
         _documentChunkRepository = documentChunkRepository;
         _documentEmbeddingRepository = documentEmbeddingRepository;
@@ -59,6 +55,9 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
         CancellationToken cancellationToken = default)
     {
         // 1. Validate command
+        if (command.TenantId == Guid.Empty)
+            throw new AppException("TenantId cannot be empty.");
+
         if (command.DocumentId == Guid.Empty)
             throw new AppException("DocumentId cannot be empty.");
 
@@ -71,7 +70,7 @@ public sealed class ChunkDocumentHandler : IRequestHandler<ChunkDocumentCommand,
         if (string.IsNullOrWhiteSpace(command.CorrelationId))
             throw new AppException("CorrelationId cannot be empty.");
 
-        var tenantId = _currentTenant.TenantId;
+        var tenantId = command.TenantId;
 
         // 2. Load Document and Version — no-op gracefully if missing or deleted
         var version = await _documentRepository.GetVersionForUpdateAsync(
