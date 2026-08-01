@@ -4,12 +4,13 @@
 
 - **.NET SDK 10.0** or later
 - **Podman** or **Docker** (for DoclingServe + infrastructure containers)
+- A PostgreSQL image with the **pgvector** extension (the AppHost supplies `pgvector/pgvector:pg17`)
 - **DeepSeek** or **OpenAI-compatible** API key (if using real chat/embeddings)
 - Optional: **LM Studio** or local OpenAI-compatible server for local embeddings/chat
 
-## Quick start: mock-only (zero external dependencies)
+## Quick start: mock providers
 
-This mode uses Mock providers for preprocessing, embeddings, and chat. Only infrastructure (PostgreSQL + RabbitMQ) needs containers.
+This mode uses mock providers for preprocessing, embeddings, and chat, so it needs no Docling or external AI service. PostgreSQL/pgvector and RabbitMQ still run as local infrastructure containers.
 
 ### 1. Configure mock providers
 
@@ -132,18 +133,26 @@ Start a local server on `http://localhost:1234` with an embedding model loaded (
 ```bash
 # Full static validation
 dotnet restore OpenRAG.slnx
-dotnet build OpenRAG.slnx
-dotnet test OpenRAG.slnx
+dotnet build OpenRAG.slnx --no-restore
+dotnet test OpenRAG.slnx --no-build
 dotnet format whitespace OpenRAG.slnx --verify-no-changes --no-restore
 dotnet format style OpenRAG.slnx --verify-no-changes --no-restore
 
-# Or use the script
+# Same checks as GitHub CI, including documentation
+./scripts/ci-local.ps1
+
+# Build/test/format only
 ./scripts/verify.ps1
+
+# Documentation only
+./scripts/docs-check.ps1
 
 # API smoke test (requires running services)
 ./scripts/mvp-smoke-test.ps1
 ./scripts/mvp-smoke-test.ps1 -Model "deepseek-chat" -ExpectedPreprocessor "DoclingServe"
 ```
+
+GitHub Actions runs restore, build, tests, both format checks, and documentation validation for pull requests and pushes to `main`. It does not start Aspire or run the live smoke test, so CI does not depend on PostgreSQL, RabbitMQ, Docling, external AI providers, local state, or secrets.
 
 ## Troubleshooting
 
@@ -235,15 +244,19 @@ With pgvector-backed storage:
   `MigrateEmbeddingVectorToPgvector` handles the type change.
 - **Search behavior unchanged:** The `IVectorSearchService` abstraction is
   unchanged. Mock providers and tests still work without pgvector.
-- **Existing data:** The migration alters the column type in-place.
-  Back up your database before running the migration on production data.
+- **Existing data:** Back up the database before applying the migration. Existing
+  serialized `bytea` embedding values may not be safely convertible to native vectors;
+  treat them as derived data that may need to be dropped during migration and regenerated.
+- **Regeneration:** After migration, call
+  `POST /api/documents/{id}/reprocess` with `forceEmbeddings: true` for each affected
+  document. This recreates embeddings through the supported processing pipeline.
 
 ## MVP Acceptance Checklist
 
 MVP is accepted when all of the following pass:
 
 - [ ] **Build:** `dotnet build OpenRAG.slnx` — 0 errors
-- [ ] **Tests:** `dotnet test OpenRAG.slnx` — all 327+ tests pass
+- [ ] **Tests:** `dotnet test OpenRAG.slnx` — all tests pass (327 at the time of this review)
 - [ ] **Format:** `dotnet format whitespace|style --verify-no-changes` — clean
 - [ ] **Provider diagnostics:** `GET /api/system/providers` returns configured providers
 - [ ] **Upload:** `POST /api/documents/upload` returns 201 with documentId

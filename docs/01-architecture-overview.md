@@ -7,9 +7,9 @@ Build a modular document intelligence and RAG platform that can ingest many file
 ## High-level flow
 
 ```text
-Accept files in many formats
-→ Store originals in S3-compatible object storage
-→ Preprocess files with Docling
+Accept files in supported formats
+→ Store originals through IFileStorage (local filesystem in the MVP)
+→ Preprocess files with a mock provider or Docling Serve
 → Generate normalized Markdown/JSON
 → Classify, summarize, extract fields, and extract entities
 → Store metadata and processing results in PostgreSQL
@@ -31,14 +31,15 @@ OpenRAG.Worker
 
 OpenRAG.AppHost
   Aspire orchestration project for local development.
-  Starts API, Worker, PostgreSQL, RabbitMQ, object storage, and Docling Serve.
+  Starts API, Worker, PostgreSQL/pgvector, RabbitMQ, and Docling Serve.
 
 PostgreSQL
   Main relational database.
-  Stores metadata, tenants, users, permissions, processing state, extraction results, CAP message state, and pgvector embeddings.
+  Stores document metadata, processing state, extraction results, CAP message state, and pgvector embeddings.
 
-S3-compatible object storage
-  Stores original files, Docling Markdown, Docling JSON, extracted images, and extracted table artifacts.
+IFileStorage
+  Stores original files and generated Markdown/JSON artifacts.
+  The MVP implementation uses local filesystem storage; an S3-compatible provider is planned for production readiness.
 
 Docling Serve / Docling CLI
   Converts source documents into normalized Markdown/JSON.
@@ -60,7 +61,7 @@ LLM/embedding provider
 | CAP simple single-process transport | In-memory |
 | Metadata DB | PostgreSQL |
 | Vector search | pgvector first |
-| Object storage | S3-compatible abstraction |
+| File storage | Local filesystem behind `IFileStorage` for the MVP; S3-compatible provider later |
 | Preprocessing | Docling Serve preferred for containerized dev |
 | AI services | OpenAI-compatible abstractions |
 | Graph DB | Optional later |
@@ -79,9 +80,11 @@ Aspire AppHost
 ├── OpenRAG.Worker
 ├── PostgreSQL + pgvector
 ├── RabbitMQ
-├── S3-compatible object storage
+├── Local filesystem storage
 └── Docling Serve
 ```
+
+PostgreSQL must provide the pgvector extension. The AppHost pins the development image to `pgvector/pgvector:pg17`.
 
 ## Recommended runtime topology for production
 
@@ -141,6 +144,8 @@ POST /api/documents/{documentId}/reprocess
 ```
 
 Triggers full or partial reprocessing. Use after changing preprocessing, chunking, or embedding settings.
+
+The pgvector migration changes stored embeddings from a serialized `bytea` value to a native `vector` column. Back up existing databases before applying it. Legacy embeddings may need to be removed during migration and regenerated with this endpoint using `forceEmbeddings: true`.
 
 ### Delete document
 

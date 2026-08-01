@@ -1,29 +1,31 @@
-# OpenRAG Architecture Documentation Pack
+# OpenRAG
 
-This documentation pack defines the proposed architecture and implementation plan for a modular .NET RAG/document intelligence platform.
+OpenRAG is an API-first .NET document intelligence and retrieval-augmented generation platform. The MVP implements document lifecycle APIs, an asynchronous CAP processing pipeline, provider abstractions, document intelligence, and server-side pgvector retrieval. It does not include a UI or production deployment manifests.
 
 ## Target direction
 
-The platform accepts files in many formats, stores originals in S3-compatible object storage, preprocesses them with Docling, stores normalized Markdown/JSON, extracts intelligence, stores metadata in PostgreSQL, stores embeddings in pgvector, and exposes RAG search/Q&A APIs.
+The platform accepts files, stores originals through `IFileStorage`, preprocesses them with mock or Docling Serve providers, stores normalized Markdown/JSON, extracts intelligence, stores metadata in PostgreSQL, stores embeddings in pgvector, and exposes RAG search/Q&A APIs. The MVP storage provider uses the local filesystem; S3-compatible storage is a production-readiness gap.
 
 ## Documentation index
 
 | Document | Purpose |
 |---|---|
-| `docs/01-architecture-overview.md` | High-level system architecture and main decisions |
-| `docs/02-clean-onion-architecture.md` | Onion/Clean Architecture boundaries and dependency rules |
-| `docs/03-solution-structure.md` | Proposed .NET solution/project structure |
-| `docs/04-local-development-with-aspire.md` | Aspire-based local development environment |
-| `docs/05-processing-pipeline-and-cap.md` | CAP events, workers, transaction, and idempotency rules |
-| `docs/06-data-storage-model.md` | PostgreSQL, pgvector, object storage, and optional graph model |
-| `docs/07-security-and-rag-safety.md` | Tenant isolation, ACL, RAG safety, file safety, and audit requirements |
-| `docs/08-implementation-roadmap.md` | MVP phases and build order |
-| `docs/09-testing-strategy.md` | Unit, integration, architecture, and RAG evaluation tests |
-| `docs/10-configuration-and-secrets.md` | Provider configuration, API key resolution, secrets handling |
-| `docs/11-mvp-local-run.md` | How to run locally, smoke test, and MVP acceptance checklist |
-| `docs/adr/0001-use-clean-onion-with-vertical-slices.md` | ADR for architecture style |
-| `docs/adr/0002-use-aspire-for-local-development.md` | ADR for Aspire local development |
-| `docs/adr/0003-use-cap-with-postgresql-storage.md` | ADR for CAP with PostgreSQL storage |
+| [Architecture overview](docs/01-architecture-overview.md) | High-level system architecture and main decisions |
+| [Clean/Onion architecture](docs/02-clean-onion-architecture.md) | Onion/Clean Architecture boundaries and dependency rules |
+| [Solution structure](docs/03-solution-structure.md) | .NET solution and project structure |
+| [Local development with Aspire](docs/04-local-development-with-aspire.md) | Aspire-based local development environment |
+| [Processing pipeline and CAP](docs/05-processing-pipeline-and-cap.md) | CAP events, workers, transaction, and idempotency rules |
+| [Data storage model](docs/06-data-storage-model.md) | PostgreSQL, pgvector, object storage, and optional graph model |
+| [Security and RAG safety](docs/07-security-and-rag-safety.md) | Tenant isolation, ACL, RAG safety, file safety, and audit requirements |
+| [Implementation roadmap](docs/08-implementation-roadmap.md) | MVP phases and build order |
+| [Testing strategy](docs/09-testing-strategy.md) | Unit, integration, architecture, and RAG evaluation tests |
+| [Configuration and secrets](docs/10-configuration-and-secrets.md) | Provider configuration, API key resolution, and secrets handling |
+| [MVP local run](docs/11-mvp-local-run.md) | Local run, smoke test, and MVP acceptance checklist |
+| [Production-readiness roadmap](docs/12-production-readiness-roadmap.md) | Remaining gaps before production use |
+| [Documentation review checklist](docs/13-documentation-review-checklist.md) | PR guidance for deciding which docs must change |
+| [ADR 0001](docs/adr/0001-use-clean-onion-with-vertical-slices.md) | Architecture style |
+| [ADR 0002](docs/adr/0002-use-aspire-for-local-development.md) | Aspire local development |
+| [ADR 0003](docs/adr/0003-use-cap-with-postgresql-storage.md) | CAP with PostgreSQL storage |
 
 ## Key decisions
 
@@ -36,9 +38,8 @@ The platform accepts files in many formats, stores originals in S3-compatible ob
   - In-memory only for single-process development.
   - RabbitMQ for realistic API + Worker development.
 - Vector search: pgvector first (implemented via `Pgvector.EntityFrameworkCore`).
-- Object storage: S3-compatible abstraction behind `IFileStorage`.
-- Local object storage: MinIO or another S3-compatible container, but avoid coupling the domain to MinIO.
-- Preprocessing: Docling Serve preferred for containerized dev; Docling CLI acceptable for simple local tests.
+- File storage: local filesystem behind `IFileStorage` for the MVP; an S3-compatible provider is planned.
+- Preprocessing: mock or Docling Serve providers behind `IDocumentPreprocessor`.
 - AI providers: OpenAI-compatible interfaces behind abstractions.
 
 ## MVP capabilities
@@ -62,12 +63,26 @@ The platform accepts files in many formats, stores originals in S3-compatible ob
 | Config validation | Startup-time `IValidateOptions<T>` |
 | Secret handling | Env vars, user secrets, never logged |
 
+## PostgreSQL and pgvector compatibility
+
+Runtime processing and RAG retrieval require PostgreSQL with the pgvector extension. Aspire uses `pgvector/pgvector:pg17`; CI intentionally does not start PostgreSQL because the automated tests use isolated models and fakes.
+
+The `MigrateEmbeddingVectorToPgvector` EF migration changes the embedding column from `bytea` to native `vector`. Back up any existing database first. Treat legacy `bytea` embedding values as regenerable data: they may need to be dropped during migration and recreated through `POST /api/documents/{id}/reprocess` with `forceEmbeddings: true`.
+
 ## Quick validation
 
 ```bash
-# Static checks
+# Same build, test, format, and documentation checks as GitHub CI
+./scripts/ci-local.ps1
+
+# Build, test, and format only
 ./scripts/verify.ps1
+
+# Documentation only
+./scripts/docs-check.ps1
 
 # API smoke test (requires running services)
 ./scripts/mvp-smoke-test.ps1
 ```
+
+GitHub Actions runs the dependency-free checks for pull requests to `main` and pushes to `main`. The live MVP smoke test is deliberately manual until CI has disposable service infrastructure.

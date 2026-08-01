@@ -16,6 +16,15 @@ Command-line arguments            → CLI overrides
 
 Aspire injects connection strings and service URLs as environment variables automatically.
 
+## Runtime infrastructure requirements
+
+- PostgreSQL must have the pgvector extension. The Aspire AppHost uses `pgvector/pgvector:pg17`.
+- API and Worker use PostgreSQL for application/CAP state and RabbitMQ for cross-process CAP transport.
+- The MVP file provider writes to the local filesystem; an S3-compatible provider is not implemented yet.
+- Docling Serve and external AI endpoints are needed only when their non-mock providers are selected.
+
+Build, unit, architecture, integration-model, format, and documentation checks do not require live PostgreSQL, RabbitMQ, Docling, or AI providers. GitHub CI does not start Aspire services or read developer-machine configuration.
+
 ## Provider matrix
 
 | Category       | Provider           | Description                                | Requires external service |
@@ -156,6 +165,8 @@ API keys are resolved in this priority order:
 | Embeddings   | `OPENAI_API_KEY`, `OPENRAG_EMBEDDINGS_API_KEY`      |
 
 API keys are **never** logged. Only presence/absence (`"present"` / `"missing"`) is recorded.
+
+GitHub Actions contains no provider credentials and does not require repository secrets. Do not add raw keys to workflow files, application settings, test fixtures, logs, documentation, or pull-request text. A future live smoke-test job must receive credentials through an approved environment or secret store and must keep mock/dependency-free validation separate.
 
 ## Example configurations
 

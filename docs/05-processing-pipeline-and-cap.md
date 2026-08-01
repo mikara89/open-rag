@@ -310,8 +310,27 @@ Response:
 The event chain preserves the existing flow:
 
 ```
-Preprocess → Chunk → Embed → Ready
+Preprocess → Chunk → Intelligence (when enabled) → Embed → Ready
 ```
+
+### Regenerating embeddings after the pgvector migration
+
+`MigrateEmbeddingVectorToPgvector` changes `document_embeddings.Vector` from serialized `bytea` data to PostgreSQL's native `vector` type. Back up the database before applying the migration. Legacy `bytea` values should be treated as regenerable: a migration may require old embedding rows to be removed rather than converted.
+
+After the schema migration, regenerate embeddings for each affected document through the normal pipeline:
+
+```http
+POST /api/documents/{documentId}/reprocess
+Content-Type: application/json
+
+{
+  "forcePreprocess": false,
+  "forceChunk": false,
+  "forceEmbeddings": true
+}
+```
+
+Using the endpoint preserves processing history and embedding metadata. Do not write replacement vectors directly to the database.
 
 ## Idempotency and Retries (MVP)
 
@@ -380,6 +399,7 @@ The first event published depends on flags:
 - Updated Docling options or extraction schema
 - Different chunking provider or parameters
 - New embedding model or provider
+- Regenerate legacy embeddings after migrating from `bytea` to pgvector
 
 ## Processing history and troubleshooting
 
