@@ -68,7 +68,7 @@ This is a production-oriented development baseline, not a production deployment.
 
 ### CI quality and security
 
-- The `Microsoft.OpenApi` High-severity advisory `GHSA-v5pm-xwqc-g5wc` (`CVE-2026-49451`) was remediated by pinning the owning API project to `Microsoft.OpenApi` 2.11.0. High and Critical NuGet vulnerability auditing, including transitive packages, now runs locally and in CI.
+- The `Microsoft.OpenApi` High-severity advisory `GHSA-v5pm-xwqc-g5wc` (`CVE-2026-49451`) was remediated by pinning the owning API project to `Microsoft.OpenApi` 2.11.0. NuGet vulnerability auditing, including transitive packages, now runs locally and in CI; it fails closed when audit data is unavailable and blocks High and Critical findings.
 - Surface coverage summaries in PR review and set an agreed coverage policy for critical application paths; raw Cobertura output is already retained as a CI artifact.
 - Add static application security testing and secret scanning.
 - Define a dependency-update policy and decide whether Moderate findings should become blocking; the current NuGet audit reports Low and Moderate findings but blocks High and Critical findings.

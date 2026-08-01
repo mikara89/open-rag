@@ -90,4 +90,4 @@ The `MigrateEmbeddingVectorToPgvector` EF migration changes the embedding column
 ./scripts/mvp-smoke-test.ps1
 ```
 
-GitHub Actions runs dependency-free validation for pull requests to `main` and pushes to `main`, fails on High or Critical NuGet vulnerabilities (including transitive packages), and retains TRX test results and Cobertura coverage as separate artifacts. The live MVP smoke test is deliberately manual until CI has disposable service infrastructure.
+GitHub Actions runs dependency-free validation for pull requests to `main` and pushes to `main`, fails when NuGet vulnerability data is unavailable or when High or Critical vulnerabilities are reported (including transitive packages), and retains TRX test results and Cobertura coverage as separate artifacts. The live MVP smoke test is deliberately manual until CI has disposable service infrastructure.

@@ -35,22 +35,26 @@ if (Test-Path -LiteralPath $resolvedResultsDirectory -PathType Container) {
 New-Item -ItemType Directory -Force -Path $resolvedResultsDirectory | Out-Null
 
 # 1. Restore
-Write-Host "[1/5] dotnet restore..." -ForegroundColor Yellow
+Write-Host "[1/6] dotnet restore..." -ForegroundColor Yellow
 dotnet restore $solution
 if ($LASTEXITCODE -ne 0) { throw "Restore failed" }
 
 # 2. Dependency audit
-Write-Host "[2/5] NuGet dependency audit..." -ForegroundColor Yellow
+Write-Host "[2/6] NuGet dependency audit..." -ForegroundColor Yellow
 & (Join-Path $PSScriptRoot "dependency-audit.ps1")
 if ($LASTEXITCODE -ne 0) { throw "Dependency audit failed" }
 
-# 3. Build
-Write-Host "[3/5] dotnet build..." -ForegroundColor Yellow
+# 3. Dependency audit gate simulations
+Write-Host "[3/6] Dependency audit gate simulations..." -ForegroundColor Yellow
+& (Join-Path $PSScriptRoot "dependency-audit.tests.ps1")
+
+# 4. Build
+Write-Host "[4/6] dotnet build..." -ForegroundColor Yellow
 dotnet build $solution --configuration $Configuration --no-restore -p:ContinuousIntegrationBuild=true
 if ($LASTEXITCODE -ne 0) { throw "Build failed" }
 
-# 4. Test
-Write-Host "[4/5] dotnet test..." -ForegroundColor Yellow
+# 5. Test
+Write-Host "[5/6] dotnet test..." -ForegroundColor Yellow
 dotnet test $solution `
     --configuration $Configuration `
     --no-build `
@@ -73,9 +77,9 @@ if ($coverageFiles.Count -eq 0) { throw "Tests passed but no coverage results we
 Write-Host "      TRX files: $($trxFiles.Count)" -ForegroundColor DarkGray
 Write-Host "      Coverage files: $($coverageFiles.Count)" -ForegroundColor DarkGray
 
-# 5. Format check
+# 6. Format check
 if (-not $SkipFormat) {
-    Write-Host "[5/5] dotnet format whitespace --verify-no-changes..." -ForegroundColor Yellow
+    Write-Host "[6/6] dotnet format whitespace --verify-no-changes..." -ForegroundColor Yellow
     dotnet format whitespace $solution --verify-no-changes --no-restore
     if ($LASTEXITCODE -ne 0) { throw "Whitespace format check failed" }
 
@@ -83,7 +87,7 @@ if (-not $SkipFormat) {
     dotnet format style $solution --verify-no-changes --no-restore
     if ($LASTEXITCODE -ne 0) { throw "Style format check failed" }
 } else {
-    Write-Host "[5/5] Format check skipped (--SkipFormat)" -ForegroundColor DarkYellow
+    Write-Host "[6/6] Format check skipped (--SkipFormat)" -ForegroundColor DarkYellow
 }
 
 Write-Host "========================================" -ForegroundColor Green
