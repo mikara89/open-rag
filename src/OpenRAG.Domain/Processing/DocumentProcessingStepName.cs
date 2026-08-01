@@ -5,7 +5,8 @@ public enum DocumentProcessingStepName
     Preprocess = 1,
     Chunk = 2,
     GenerateEmbeddings = 3,
-    Classify = 4,
-    Summarize = 5,
-    ExtractFields = 6
+    GenerateIntelligence = 4,
+    Classify = 5,
+    Summarize = 6,
+    ExtractFields = 7
 }

@@ -23,6 +23,7 @@ public sealed class ReprocessDocumentHandlerTests
             fakes.DocRepo,
             fakes.ChunkRepo,
             fakes.EmbeddingRepo,
+            fakes.IntelligenceRepo,
             fakes.RunRepo,
             fakes.EventBus,
             fakes.Tenant,
@@ -33,6 +34,7 @@ public sealed class ReprocessDocumentHandlerTests
     private static ReprocessDocumentCommand CreateCommand(
         bool forcePreprocess = true,
         bool forceChunk = true,
+        bool forceIntelligence = true,
         bool forceEmbeddings = true)
     {
         return new ReprocessDocumentCommand(
@@ -40,6 +42,7 @@ public sealed class ReprocessDocumentHandlerTests
             DocumentId,
             forcePreprocess,
             forceChunk,
+            forceIntelligence,
             forceEmbeddings,
             Guid.NewGuid().ToString("N"));
     }
@@ -77,7 +80,7 @@ public sealed class ReprocessDocumentHandlerTests
         var fakes = new Fakes { Doc = doc };
 
         var handler = CreateHandler(fakes);
-        var command = new ReprocessDocumentCommand(otherTenantId, DocumentId, true, true, true, "corr-1");
+        var command = new ReprocessDocumentCommand(otherTenantId, DocumentId, true, true, true, true, "corr-1");
 
         var ex = await Assert.ThrowsAsync<AppException>(() => handler.Handle(command).AsTask());
         Assert.Contains("does not belong to tenant", ex.Message);
@@ -174,12 +177,28 @@ public sealed class ReprocessDocumentHandlerTests
         var fakes = new Fakes { Doc = doc, Version = version };
 
         var handler = CreateHandler(fakes);
-        var command = CreateCommand(forcePreprocess: false, forceChunk: true, forceEmbeddings: false);
+        var command = CreateCommand(forcePreprocess: false, forceChunk: true, forceIntelligence: false, forceEmbeddings: false);
 
         var response = await handler.Handle(command);
 
         Assert.NotEmpty(fakes.EventBus.PublishedTopics);
         Assert.Contains("document.chunking.requested", fakes.EventBus.PublishedTopics);
+    }
+
+    [Fact]
+    public async Task Publishes_intelligence_requested_when_only_forceIntelligence_is_true()
+    {
+        var doc = CreateReadyDocument();
+        var version = GetCurrentVersion(doc);
+        var fakes = new Fakes { Doc = doc, Version = version };
+
+        var handler = CreateHandler(fakes);
+        var command = CreateCommand(forcePreprocess: false, forceChunk: false, forceIntelligence: true, forceEmbeddings: false);
+
+        var response = await handler.Handle(command);
+
+        Assert.NotEmpty(fakes.EventBus.PublishedTopics);
+        Assert.Contains("document.intelligence.requested", fakes.EventBus.PublishedTopics);
     }
 
     [Fact]
@@ -190,7 +209,7 @@ public sealed class ReprocessDocumentHandlerTests
         var fakes = new Fakes { Doc = doc, Version = version };
 
         var handler = CreateHandler(fakes);
-        var command = CreateCommand(forcePreprocess: false, forceChunk: false, forceEmbeddings: true);
+        var command = CreateCommand(forcePreprocess: false, forceChunk: false, forceIntelligence: false, forceEmbeddings: true);
 
         var response = await handler.Handle(command);
 
@@ -346,12 +365,28 @@ public sealed class ReprocessDocumentHandlerTests
         var fakes = new Fakes { Doc = doc, Version = version };
 
         var handler = CreateHandler(fakes);
-        var command = CreateCommand(forcePreprocess: true, forceChunk: false, forceEmbeddings: false);
+        var command = CreateCommand(forcePreprocess: true, forceChunk: false, forceIntelligence: false, forceEmbeddings: false);
 
         await handler.Handle(command);
 
         Assert.NotNull(fakes.RunRepo.AddedRun);
         Assert.Equal(ProcessingRunReason.ReprocessWithNewPreprocessor, fakes.RunRepo.AddedRun!.RunReason);
+    }
+
+    [Fact]
+    public async Task Uses_ReprocessWithNewIntelligenceModel_reason_when_only_forceIntelligence_true()
+    {
+        var doc = CreateReadyDocument();
+        var version = GetCurrentVersion(doc);
+        var fakes = new Fakes { Doc = doc, Version = version };
+
+        var handler = CreateHandler(fakes);
+        var command = CreateCommand(forcePreprocess: false, forceChunk: false, forceIntelligence: true, forceEmbeddings: false);
+
+        await handler.Handle(command);
+
+        Assert.NotNull(fakes.RunRepo.AddedRun);
+        Assert.Equal(ProcessingRunReason.ReprocessWithNewIntelligenceModel, fakes.RunRepo.AddedRun!.RunReason);
     }
 
     [Fact]
@@ -362,7 +397,7 @@ public sealed class ReprocessDocumentHandlerTests
         var fakes = new Fakes { Doc = doc, Version = version };
 
         var handler = CreateHandler(fakes);
-        var command = CreateCommand(forcePreprocess: false, forceChunk: false, forceEmbeddings: true);
+        var command = CreateCommand(forcePreprocess: false, forceChunk: false, forceIntelligence: false, forceEmbeddings: true);
 
         await handler.Handle(command);
 
@@ -378,7 +413,7 @@ public sealed class ReprocessDocumentHandlerTests
         var fakes = new Fakes { Doc = doc, Version = version };
 
         var handler = CreateHandler(fakes);
-        var command = CreateCommand(forcePreprocess: false, forceChunk: true, forceEmbeddings: false);
+        var command = CreateCommand(forcePreprocess: false, forceChunk: true, forceIntelligence: false, forceEmbeddings: false);
 
         await handler.Handle(command);
 
@@ -402,6 +437,7 @@ public sealed class ReprocessDocumentHandlerTests
         public FakeDocRepo DocRepo => new(Doc, Version);
         public FakeChunkRepo ChunkRepo { get; } = new();
         public FakeEmbeddingRepo EmbeddingRepo { get; } = new();
+        public FakeIntelligenceRepo IntelligenceRepo { get; } = new();
         public FakeRunRepo RunRepo { get; } = new();
         public FakeEventBus EventBus { get; } = new();
         public StubTenant Tenant => new(TenantId);
@@ -470,6 +506,25 @@ public sealed class ReprocessDocumentHandlerTests
         public Task<int> CountByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) => Task.FromResult(0);
         public Task<DocumentEmbeddingMetadata?> GetMetadataByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
             => Task.FromResult<DocumentEmbeddingMetadata?>(null);
+        public Task DeleteByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
+        {
+            DeleteCalled = true;
+            DeletedVersionId = vid;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeIntelligenceRepo : IDocumentIntelligenceRepository
+    {
+        public bool DeleteCalled { get; private set; }
+        public Guid DeletedVersionId { get; private set; }
+
+        public Task<DocumentIntelligence?> GetByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
+            => Task.FromResult<DocumentIntelligence?>(null);
+
+        public Task AddAsync(DocumentIntelligence intelligence, CancellationToken ct = default)
+            => Task.CompletedTask;
+
         public Task DeleteByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
         {
             DeleteCalled = true;

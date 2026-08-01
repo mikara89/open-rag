@@ -17,7 +17,7 @@ public sealed class GetDocumentDetailHandlerTests
     public async Task Returns_404_for_missing_document()
     {
         var fakes = new Fakes(null);
-        var handler = new GetDocumentDetailHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.Tenant);
+        var handler = new GetDocumentDetailHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.IntelligenceRepo, fakes.Tenant);
 
         var ex = await Assert.ThrowsAsync<AppException>(() =>
             handler.Handle(new GetDocumentDetailQuery(DocId)).AsTask());
@@ -30,7 +30,7 @@ public sealed class GetDocumentDetailHandlerTests
     {
         var doc = Document.Create(DocId, TenantId, "test.md", "test.md", UserId);
         var fakes = new Fakes(doc);
-        var handler = new GetDocumentDetailHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.Tenant);
+        var handler = new GetDocumentDetailHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.IntelligenceRepo, fakes.Tenant);
 
         var response = await handler.Handle(new GetDocumentDetailQuery(DocId));
 
@@ -45,7 +45,7 @@ public sealed class GetDocumentDetailHandlerTests
     {
         var doc = CreateDocumentWithVersion();
         var fakes = new Fakes(doc);
-        var handler = new GetDocumentDetailHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.Tenant);
+        var handler = new GetDocumentDetailHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.IntelligenceRepo, fakes.Tenant);
 
         var response = await handler.Handle(new GetDocumentDetailQuery(DocId));
 
@@ -60,7 +60,7 @@ public sealed class GetDocumentDetailHandlerTests
     {
         var doc = CreateDocumentWithVersion();
         var fakes = new Fakes(doc);
-        var handler = new GetDocumentDetailHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.Tenant);
+        var handler = new GetDocumentDetailHandler(fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.IntelligenceRepo, fakes.Tenant);
 
         var response = await handler.Handle(new GetDocumentDetailQuery(DocId));
 
@@ -86,6 +86,7 @@ public sealed class GetDocumentDetailHandlerTests
         public FakeDocRepo DocRepo { get; }
         public FakeChunkRepo ChunkRepo { get; } = new();
         public FakeEmbeddingRepo EmbeddingRepo { get; } = new();
+        public FakeIntelligenceRepo IntelligenceRepo { get; } = new();
         public StubTenant Tenant => new(TenantId);
     }
 
@@ -138,6 +139,18 @@ public sealed class GetDocumentDetailHandlerTests
 
         public Task<DocumentChunk?> GetByIdForVersionAsync(Guid tid, Guid did, Guid vid, Guid cid, CancellationToken ct = default)
             => Task.FromResult<DocumentChunk?>(null);
+    }
+
+    private sealed class FakeIntelligenceRepo : IDocumentIntelligenceRepository
+    {
+        public Task<DocumentIntelligence?> GetByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
+            => Task.FromResult<DocumentIntelligence?>(null);
+
+        public Task AddAsync(DocumentIntelligence intelligence, CancellationToken ct = default)
+            => Task.CompletedTask;
+
+        public Task DeleteByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
+            => Task.CompletedTask;
     }
 
     private sealed class StubTenant : ICurrentTenant

@@ -7,6 +7,7 @@ public sealed record ReprocessDocumentCommand(
     Guid DocumentId,
     bool ForcePreprocess,
     bool ForceChunk,
+    bool ForceIntelligence,
     bool ForceEmbeddings,
     string CorrelationId
 ) : IRequest<ReprocessDocumentResponse>;

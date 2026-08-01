@@ -16,6 +16,8 @@ builder.Services.AddTransient<DocumentPreprocessRequestedConsumer>();
 builder.Services.AddTransient<DocumentPreprocessedConsumer>();
 builder.Services.AddTransient<DocumentChunkingRequestedConsumer>();
 builder.Services.AddTransient<DocumentChunkedConsumer>();
+builder.Services.AddTransient<DocumentIntelligenceRequestedConsumer>();
+builder.Services.AddTransient<DocumentIntelligenceGeneratedConsumer>();
 builder.Services.AddTransient<DocumentEmbeddingsRequestedConsumer>();
 
 builder.Services.AddHostedService<Worker>();

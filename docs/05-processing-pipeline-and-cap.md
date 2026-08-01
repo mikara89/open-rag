@@ -35,7 +35,33 @@ embedding arrays
 sensitive content unless necessary
 ```
 
-## Recommended event flow
+## Implemented event flow (MVP)
+
+```text
+document.uploaded
+    ↓
+document.preprocess.requested
+    ↓
+document.preprocessed
+    ↓
+document.chunking.requested
+    ↓
+document.chunked
+    ↓
+document.intelligence.requested   ← classification, summary, keywords, entities
+    ↓
+document.intelligence.generated
+    ↓
+document.embeddings.requested
+    ↓
+document.embeddings.generated
+    ↓
+document.ready
+```
+
+If `Intelligence.Enabled = false`, intelligence is skipped and the flow goes directly from chunked → embeddings.requested.
+
+## Recommended future event flow (post-MVP)
 
 ```text
 document.uploaded

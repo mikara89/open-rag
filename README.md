@@ -46,7 +46,7 @@ The platform accepts files in many formats, stores originals in S3-compatible ob
 | Feature | Endpoint |
 |---------|----------|
 | Upload document | `POST /api/documents/upload` |
-| Processing pipeline | Preprocess → Chunk → Embed → Ready |
+| Processing pipeline | Preprocess → Chunk → Intelligence → Embed → Ready |
 | Document list | `GET /api/documents` |
 | Document detail | `GET /api/documents/{id}` |
 | Document status | `GET /api/documents/{id}/status` |
@@ -58,6 +58,7 @@ The platform accepts files in many formats, stores originals in S3-compatible ob
 | Chunk detail | `GET .../chunks/{chunkId}` |
 | RAG ask | `POST /api/rag/ask` |
 | Provider diagnostics | `GET /api/system/providers` |
+| Document intelligence | `GET .../versions/{versionId}/intelligence` |
 | Config validation | Startup-time `IValidateOptions<T>` |
 | Secret handling | Env vars, user secrets, never logged |
 

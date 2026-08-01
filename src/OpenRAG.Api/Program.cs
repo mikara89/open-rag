@@ -3,6 +3,7 @@ using OpenRAG.Application;
 using OpenRAG.Application.Documents.DeleteDocument;
 using OpenRAG.Application.Documents.GetDocumentChunk;
 using OpenRAG.Application.Documents.GetDocumentDetail;
+using OpenRAG.Application.Documents.GetDocumentIntelligence;
 using OpenRAG.Application.Documents.GetDocumentStatus;
 using OpenRAG.Application.Documents.GetJsonArtifact;
 using OpenRAG.Application.Documents.GetMarkdownArtifact;
@@ -106,6 +107,7 @@ app.MapPost("/api/documents/{documentId:guid}/reprocess", async (
         DocumentId: documentId,
         ForcePreprocess: request.ForcePreprocess,
         ForceChunk: request.ForceChunk,
+        ForceIntelligence: request.ForceIntelligence,
         ForceEmbeddings: request.ForceEmbeddings,
         CorrelationId: correlationId);
 
@@ -201,6 +203,24 @@ app.MapGet("/api/documents/{documentId:guid}/versions/{versionId:guid}/chunks/{c
     return Results.Ok(response);
 })
 .WithName("GetDocumentChunk");
+
+// ── Intelligence endpoint ─────────────────────────────────────────
+
+app.MapGet("/api/documents/{documentId:guid}/versions/{versionId:guid}/intelligence", async (
+    Guid documentId,
+    Guid versionId,
+    ISender sender,
+    CancellationToken cancellationToken) =>
+{
+    var query = new GetDocumentIntelligenceQuery(documentId, versionId);
+    var response = await sender.Send(query, cancellationToken);
+
+    if (response is null)
+        return Results.NotFound(new { message = "No intelligence data for this version." });
+
+    return Results.Ok(response);
+})
+.WithName("GetDocumentIntelligence");
 
 // ── RAG endpoints ─────────────────────────────────────────────────
 

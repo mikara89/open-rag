@@ -106,11 +106,12 @@ public sealed class DocumentProcessingRunTests
     public void All_run_reasons_exist_in_enum()
     {
         var values = Enum.GetValues<ProcessingRunReason>();
-        Assert.Equal(5, values.Length);
+        Assert.Equal(6, values.Length);
         Assert.Contains(ProcessingRunReason.InitialUpload, values);
         Assert.Contains(ProcessingRunReason.ManualRetry, values);
         Assert.Contains(ProcessingRunReason.ReprocessWithNewPreprocessor, values);
         Assert.Contains(ProcessingRunReason.ReprocessWithNewEmbeddingModel, values);
+        Assert.Contains(ProcessingRunReason.ReprocessWithNewIntelligenceModel, values);
         Assert.Contains(ProcessingRunReason.ReprocessWithNewExtractionSchema, values);
     }
 

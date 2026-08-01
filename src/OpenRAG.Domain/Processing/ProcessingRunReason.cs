@@ -6,5 +6,6 @@ public enum ProcessingRunReason
     ManualRetry = 2,
     ReprocessWithNewPreprocessor = 3,
     ReprocessWithNewEmbeddingModel = 4,
-    ReprocessWithNewExtractionSchema = 5
+    ReprocessWithNewIntelligenceModel = 5,
+    ReprocessWithNewExtractionSchema = 6
 }

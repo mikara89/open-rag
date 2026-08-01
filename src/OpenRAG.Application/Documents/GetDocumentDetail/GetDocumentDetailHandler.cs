@@ -11,17 +11,20 @@ public sealed class GetDocumentDetailHandler : IRequestHandler<GetDocumentDetail
     private readonly IDocumentRepository _documentRepository;
     private readonly IDocumentChunkRepository _chunkRepository;
     private readonly IDocumentEmbeddingRepository _embeddingRepository;
+    private readonly IDocumentIntelligenceRepository _intelligenceRepository;
     private readonly ICurrentTenant _currentTenant;
 
     public GetDocumentDetailHandler(
         IDocumentRepository documentRepository,
         IDocumentChunkRepository chunkRepository,
         IDocumentEmbeddingRepository embeddingRepository,
+        IDocumentIntelligenceRepository intelligenceRepository,
         ICurrentTenant currentTenant)
     {
         _documentRepository = documentRepository;
         _chunkRepository = chunkRepository;
         _embeddingRepository = embeddingRepository;
+        _intelligenceRepository = intelligenceRepository;
         _currentTenant = currentTenant;
     }
 
@@ -42,6 +45,7 @@ public sealed class GetDocumentDetailHandler : IRequestHandler<GetDocumentDetail
 
         // Build latest version detail
         DocumentDetailVersionDto? latestVersion = null;
+        DocumentDetailIntelligenceDto? intelligence = null;
         if (document.CurrentVersionId is not null)
         {
             var version = document.Versions.FirstOrDefault(v => v.Id == document.CurrentVersionId.Value);
@@ -65,6 +69,20 @@ public sealed class GetDocumentDetailHandler : IRequestHandler<GetDocumentDetail
                     EmbeddingProvider: embeddingMeta?.Provider,
                     EmbeddingModel: embeddingMeta?.Model,
                     EmbeddingDimensions: embeddingMeta?.Dimensions);
+
+                // Load intelligence if available
+                var intel = await _intelligenceRepository.GetByVersionAsync(
+                    tenantId, document.Id, version.Id, cancellationToken);
+
+                if (intel is not null)
+                {
+                    intelligence = new DocumentDetailIntelligenceDto(
+                        Classification: intel.Classification,
+                        Summary: intel.Summary,
+                        IntelligenceProvider: intel.Provider,
+                        IntelligenceModel: intel.Model,
+                        IntelligenceUpdatedAt: intel.UpdatedAt);
+                }
             }
         }
 
@@ -74,6 +92,7 @@ public sealed class GetDocumentDetailHandler : IRequestHandler<GetDocumentDetail
             Status: document.Status.ToString(),
             CreatedAt: document.CreatedAt,
             UpdatedAt: document.UpdatedAt,
-            LatestVersion: latestVersion);
+            LatestVersion: latestVersion,
+            Intelligence: intelligence);
     }
 }

@@ -11,6 +11,7 @@ using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Storage;
 using OpenRAG.Application.Abstractions.Time;
 using OpenRAG.Application.Abstractions.Vector;
+using OpenRAG.Application.Processing.GenerateIntelligence;
 using OpenRAG.Application.Rag;
 using OpenRAG.Infrastructure.AI;
 using OpenRAG.Infrastructure.Messaging;
@@ -55,6 +56,7 @@ public static class DependencyInjection
         services.AddScoped<IProcessingRunRepository, EfProcessingRunRepository>();
         services.AddScoped<IDocumentChunkRepository, EfDocumentChunkRepository>();
         services.AddScoped<IDocumentEmbeddingRepository, EfDocumentEmbeddingRepository>();
+        services.AddScoped<IDocumentIntelligenceRepository, EfDocumentIntelligenceRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         // Storage
@@ -201,6 +203,23 @@ public static class DependencyInjection
         // RAG options
         services.Configure<RagOptions>(
             configuration.GetSection(RagOptions.SectionName));
+
+        // Intelligence — provider selection via configuration
+        services.Configure<GenerateIntelligenceOptions>(
+            configuration.GetSection(GenerateIntelligenceOptions.SectionName));
+
+        var intelligenceProvider = configuration["Intelligence:Provider"] ?? "Mock";
+
+        if (string.Equals(intelligenceProvider, "Chat", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddScoped<ChatDocumentIntelligenceService>();
+            services.AddScoped<IDocumentIntelligenceService>(sp =>
+                sp.GetRequiredService<ChatDocumentIntelligenceService>());
+        }
+        else
+        {
+            services.AddScoped<IDocumentIntelligenceService, MockDocumentIntelligenceService>();
+        }
 
         // Vector search (pgvector-backed EF Core implementation)
         services.AddScoped<IVectorSearchService, EfVectorSearchService>();

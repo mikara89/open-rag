@@ -243,14 +243,14 @@ With pgvector-backed storage:
 MVP is accepted when all of the following pass:
 
 - [ ] **Build:** `dotnet build OpenRAG.slnx` — 0 errors
-- [ ] **Tests:** `dotnet test OpenRAG.slnx` — all 324+ tests pass
+- [ ] **Tests:** `dotnet test OpenRAG.slnx` — all 327+ tests pass
 - [ ] **Format:** `dotnet format whitespace|style --verify-no-changes` — clean
 - [ ] **Provider diagnostics:** `GET /api/system/providers` returns configured providers
 - [ ] **Upload:** `POST /api/documents/upload` returns 201 with documentId
 - [ ] **Processing:** Document reaches `Ready` status within timeout
-- [ ] **Processing history:** Status response includes `processingRuns` with completed steps
-- [ ] **List:** Document appears in `GET /api/documents` results
-- [ ] **Detail:** `GET /api/documents/{id}` shows latest version, chunk count, embedding metadata
+- [ ] **Processing history:** Status response includes `processingRuns` with completed steps (Preprocess, Chunk, Intelligence, GenerateEmbeddings)
+- [ ] **Intelligence:** `GET .../versions/{versionId}/intelligence` returns classification, summary, keywords
+- [ ] **Detail intelligence:** `GET /api/documents/{id}` includes `intelligence` block with classification/summary
 - [ ] **Markdown artifact:** `GET .../artifacts/markdown` returns content
 - [ ] **JSON artifact:** `GET .../artifacts/json` returns content or a reasonable empty/404
 - [ ] **Chunks list:** `GET .../chunks` returns paginated chunks

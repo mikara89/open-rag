@@ -12,7 +12,8 @@ public sealed record GetDocumentDetailResponse(
     string Status,
     DateTime CreatedAt,
     DateTime UpdatedAt,
-    DocumentDetailVersionDto? LatestVersion
+    DocumentDetailVersionDto? LatestVersion,
+    DocumentDetailIntelligenceDto? Intelligence
 );
 
 public sealed record DocumentDetailVersionDto(
@@ -26,4 +27,12 @@ public sealed record DocumentDetailVersionDto(
     string? EmbeddingProvider,
     string? EmbeddingModel,
     int? EmbeddingDimensions
+);
+
+public sealed record DocumentDetailIntelligenceDto(
+    string? Classification,
+    string? Summary,
+    string? IntelligenceProvider,
+    string? IntelligenceModel,
+    DateTimeOffset? IntelligenceUpdatedAt
 );

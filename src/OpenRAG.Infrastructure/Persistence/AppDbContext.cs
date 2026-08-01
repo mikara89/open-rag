@@ -17,6 +17,7 @@ public sealed class AppDbContext : DbContext
     public DbSet<DocumentProcessingStep> DocumentProcessingSteps => Set<DocumentProcessingStep>();
     public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
     public DbSet<DocumentEmbedding> DocumentEmbeddings => Set<DocumentEmbedding>();
+    public DbSet<DocumentIntelligence> DocumentIntelligence => Set<DocumentIntelligence>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

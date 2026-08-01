@@ -15,6 +15,7 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
     private readonly IDocumentRepository _documentRepository;
     private readonly IDocumentChunkRepository _chunkRepository;
     private readonly IDocumentEmbeddingRepository _embeddingRepository;
+    private readonly IDocumentIntelligenceRepository _intelligenceRepository;
     private readonly IProcessingRunRepository _processingRunRepository;
     private readonly IDocumentEventBus _eventBus;
     private readonly ICurrentTenant _currentTenant;
@@ -25,6 +26,7 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
         IDocumentRepository documentRepository,
         IDocumentChunkRepository chunkRepository,
         IDocumentEmbeddingRepository embeddingRepository,
+        IDocumentIntelligenceRepository intelligenceRepository,
         IProcessingRunRepository processingRunRepository,
         IDocumentEventBus eventBus,
         ICurrentTenant currentTenant,
@@ -34,6 +36,7 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
         _documentRepository = documentRepository;
         _chunkRepository = chunkRepository;
         _embeddingRepository = embeddingRepository;
+        _intelligenceRepository = intelligenceRepository;
         _processingRunRepository = processingRunRepository;
         _eventBus = eventBus;
         _currentTenant = currentTenant;
@@ -115,17 +118,24 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
                 tenantId, command.DocumentId, versionId, cancellationToken);
         }
 
-        // 11. Delete old embeddings if requested
+        // 11. Delete old intelligence if requested
+        if (command.ForceIntelligence)
+        {
+            await _intelligenceRepository.DeleteByVersionAsync(
+                tenantId, command.DocumentId, versionId, cancellationToken);
+        }
+
+        // 12. Delete old embeddings if requested
         if (command.ForceEmbeddings)
         {
             await _embeddingRepository.DeleteByVersionAsync(
                 tenantId, command.DocumentId, versionId, cancellationToken);
         }
 
-        // 12. Save EF changes
+        // 13. Save EF changes
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // 13. Publish the correct starting event based on flags
+        // 14. Publish the correct starting event based on flags
         var occurredAt = _clock.UtcNow;
 
         if (command.ForcePreprocess)
@@ -156,6 +166,18 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
 
             await _eventBus.PublishAsync("document.chunking.requested", chunkingRequested, cancellationToken);
         }
+        else if (command.ForceIntelligence)
+        {
+            var intelligenceRequested = new DocumentIntelligenceRequestedEvent(
+                TenantId: tenantId,
+                DocumentId: command.DocumentId,
+                VersionId: versionId,
+                ProcessingRunId: processingRunId,
+                CorrelationId: command.CorrelationId,
+                OccurredAt: occurredAt);
+
+            await _eventBus.PublishAsync("document.intelligence.requested", intelligenceRequested, cancellationToken);
+        }
         else if (command.ForceEmbeddings)
         {
             var embeddingsRequested = new DocumentEmbeddingsRequestedEvent(
@@ -183,6 +205,9 @@ public sealed class ReprocessDocumentHandler : IRequestHandler<ReprocessDocument
     {
         if (command.ForcePreprocess)
             return ProcessingRunReason.ReprocessWithNewPreprocessor;
+
+        if (command.ForceIntelligence)
+            return ProcessingRunReason.ReprocessWithNewIntelligenceModel;
 
         if (command.ForceEmbeddings)
             return ProcessingRunReason.ReprocessWithNewEmbeddingModel;

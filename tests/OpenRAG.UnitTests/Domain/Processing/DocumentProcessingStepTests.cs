@@ -202,10 +202,11 @@ public sealed class DocumentProcessingStepTests
     public void All_step_names_exist_in_enum()
     {
         var values = Enum.GetValues<DocumentProcessingStepName>();
-        Assert.Equal(6, values.Length);
+        Assert.Equal(7, values.Length);
         Assert.Contains(DocumentProcessingStepName.Preprocess, values);
         Assert.Contains(DocumentProcessingStepName.Chunk, values);
         Assert.Contains(DocumentProcessingStepName.GenerateEmbeddings, values);
+        Assert.Contains(DocumentProcessingStepName.GenerateIntelligence, values);
         Assert.Contains(DocumentProcessingStepName.Classify, values);
         Assert.Contains(DocumentProcessingStepName.Summarize, values);
         Assert.Contains(DocumentProcessingStepName.ExtractFields, values);
