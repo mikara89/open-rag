@@ -28,6 +28,9 @@ public sealed class OpenRagExceptionHandler : IExceptionHandler
         Exception exception,
         CancellationToken cancellationToken)
     {
+        if (exception is OperationCanceledException)
+            return false;
+
         var mapping = Map(exception);
 
         if (exception is IsolationViolationException || mapping.Status == StatusCodes.Status500InternalServerError)
@@ -65,16 +68,6 @@ public sealed class OpenRagExceptionHandler : IExceptionHandler
             "request-validation",
             "The request is invalid.",
             validation.Message),
-        ResourceNotFoundException => new(
-            StatusCodes.Status404NotFound,
-            "resource-not-found",
-            "Resource not found.",
-            ResourceNotFoundException.PublicMessage),
-        ResourceConflictException conflict => new(
-            StatusCodes.Status409Conflict,
-            "resource-conflict",
-            "The request conflicts with the resource state.",
-            conflict.Message),
         DomainException conflict => new(
             StatusCodes.Status409Conflict,
             "resource-conflict",

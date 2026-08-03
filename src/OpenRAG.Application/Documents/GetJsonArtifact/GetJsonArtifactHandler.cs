@@ -3,10 +3,12 @@ using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Storage;
 using OpenRAG.Application.Common;
+using OpenRAG.Application.Common.Results;
 
 namespace OpenRAG.Application.Documents.GetJsonArtifact;
 
-public sealed class GetJsonArtifactHandler : IRequestHandler<GetJsonArtifactQuery, GetJsonArtifactResponse>
+public sealed class GetJsonArtifactHandler
+    : IRequestHandler<GetJsonArtifactQuery, Result<GetJsonArtifactResponse>>
 {
     private readonly IDocumentRepository _documentRepository;
     private readonly IFileStorage _fileStorage;
@@ -25,20 +27,30 @@ public sealed class GetJsonArtifactHandler : IRequestHandler<GetJsonArtifactQuer
         _currentTenant = currentTenant;
     }
 
-    public async ValueTask<GetJsonArtifactResponse> Handle(
+    public async ValueTask<Result<GetJsonArtifactResponse>> Handle(
         GetJsonArtifactQuery query,
         CancellationToken cancellationToken = default)
     {
-        var tenantId = _currentTenant.TenantId;
-
         if (query.DocumentId == Guid.Empty || query.VersionId == Guid.Empty)
-            throw new RequestValidationException("Document and version identifiers must be non-empty.");
+        {
+            var target = query.DocumentId == Guid.Empty ? "documentId" : "versionId";
+            var code = query.DocumentId == Guid.Empty
+                ? "request.document_id_required"
+                : "request.version_id_required";
+            return Result<GetJsonArtifactResponse>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    code,
+                    $"{(target == "documentId" ? "DocumentId" : "VersionId")} cannot be empty.",
+                    target));
+        }
+
+        var tenantId = _currentTenant.TenantId;
 
         var version = await _documentRepository.GetVersionAsync(
             tenantId, query.DocumentId, query.VersionId, cancellationToken);
 
         if (version is null)
-            throw new ResourceNotFoundException();
+            return Result<GetJsonArtifactResponse>.Failure(ApplicationErrors.ResourceNotFound());
 
         IsolationGuard.Equal(version.TenantId, tenantId, nameof(version.TenantId));
         IsolationGuard.Equal(version.DocumentId, query.DocumentId, nameof(version.DocumentId));
@@ -46,7 +58,7 @@ public sealed class GetJsonArtifactHandler : IRequestHandler<GetJsonArtifactQuer
 
         if (string.IsNullOrWhiteSpace(version.DoclingJsonObjectKey)
             || string.Equals(version.DoclingJsonObjectKey, "pending", StringComparison.Ordinal))
-            throw new ResourceNotFoundException();
+            return Result<GetJsonArtifactResponse>.Failure(ApplicationErrors.ResourceNotFound());
 
         _objectKeyPolicy.EnsureOwned(
             version.DoclingJsonObjectKey,
@@ -61,6 +73,7 @@ public sealed class GetJsonArtifactHandler : IRequestHandler<GetJsonArtifactQuer
         using var reader = new StreamReader(stream);
         var content = await reader.ReadToEndAsync(cancellationToken);
 
-        return new GetJsonArtifactResponse(content, "application/json");
+        return Result<GetJsonArtifactResponse>.Success(
+            new GetJsonArtifactResponse(content, "application/json"));
     }
 }

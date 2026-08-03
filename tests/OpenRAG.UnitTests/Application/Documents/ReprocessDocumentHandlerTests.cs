@@ -67,8 +67,9 @@ public sealed class ReprocessDocumentHandlerTests
         var handler = CreateHandler(fakes);
         var command = CreateCommand();
 
-        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() => handler.Handle(command).AsTask());
-        Assert.Contains("not found", ex.Message);
+        var result = await handler.Handle(command);
+        Assert.Equal("resource.not_found", result.PrimaryError.Code);
+        Assert.Empty(fakes.EventBus.PublishedTopics);
     }
 
     [Fact]
@@ -81,8 +82,9 @@ public sealed class ReprocessDocumentHandlerTests
         var handler = CreateHandler(fakes);
         var command = new ReprocessDocumentCommand(DocumentId, true, true, true, true, "corr-1");
 
-        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() => handler.Handle(command).AsTask());
-        Assert.Equal("The requested resource was not found.", ex.Message);
+        var result = await handler.Handle(command);
+        Assert.Equal("resource.not_found", result.PrimaryError.Code);
+        Assert.Equal("The requested resource was not found.", result.PrimaryError.Message);
     }
 
     [Fact]
@@ -101,8 +103,9 @@ public sealed class ReprocessDocumentHandlerTests
         var handler = CreateHandler(fakes);
         var command = CreateCommand();
 
-        var ex = await Assert.ThrowsAsync<ResourceConflictException>(() => handler.Handle(command).AsTask());
-        Assert.Contains("deleted", ex.Message.ToLower());
+        var result = await handler.Handle(command);
+        Assert.Equal("document.deleted", result.PrimaryError.Code);
+        Assert.Empty(fakes.EventBus.PublishedTopics);
     }
 
     [Fact]
@@ -115,8 +118,9 @@ public sealed class ReprocessDocumentHandlerTests
         var handler = CreateHandler(fakes);
         var command = CreateCommand();
 
-        var ex = await Assert.ThrowsAsync<ResourceConflictException>(() => handler.Handle(command).AsTask());
-        Assert.Contains("already processing", ex.Message.ToLower());
+        var result = await handler.Handle(command);
+        Assert.Equal("document.processing", result.PrimaryError.Code);
+        Assert.Empty(fakes.EventBus.PublishedTopics);
     }
 
     [Fact]
@@ -131,8 +135,9 @@ public sealed class ReprocessDocumentHandlerTests
         var handler = CreateHandler(fakes);
         var command = CreateCommand();
 
-        var ex = await Assert.ThrowsAsync<ResourceConflictException>(() => handler.Handle(command).AsTask());
-        Assert.Equal("The document has no current version.", ex.Message);
+        var result = await handler.Handle(command);
+        Assert.Equal("processing.invalid_state", result.PrimaryError.Code);
+        Assert.Equal("The document has no current version.", result.PrimaryError.Message);
     }
 
     [Fact]
@@ -148,10 +153,9 @@ public sealed class ReprocessDocumentHandlerTests
             forceIntelligence: false,
             forceEmbeddings: false);
 
-        var ex = await Assert.ThrowsAsync<RequestValidationException>(
-            () => handler.Handle(command).AsTask());
+        var result = await handler.Handle(command);
 
-        Assert.Equal("At least one reprocessing stage must be selected.", ex.Message);
+        Assert.Equal("request.reprocess_stage_required", result.PrimaryError.Code);
         Assert.Equal(originalStatus, doc.Status);
         Assert.False(fakes.DocRepo.GetForUpdateCalled);
         Assert.Null(fakes.RunRepo.AddedRun);
@@ -173,7 +177,7 @@ public sealed class ReprocessDocumentHandlerTests
         var handler = CreateHandler(fakes);
         var command = CreateCommand();
 
-        var response = await handler.Handle(command);
+        var response = (await handler.Handle(command)).Value;
 
         Assert.Equal("Processing", response.Status);
     }
@@ -336,7 +340,7 @@ public sealed class ReprocessDocumentHandlerTests
         var command = CreateCommand(forcePreprocess: false, forceChunk: true, forceEmbeddings: true);
 
         // Should not throw when deleting non-existent chunks/embeddings
-        var response = await handler.Handle(command);
+        var response = (await handler.Handle(command)).Value;
 
         Assert.Equal("Processing", response.Status);
     }
@@ -370,7 +374,7 @@ public sealed class ReprocessDocumentHandlerTests
         var handler = CreateHandler(fakes);
         var command = CreateCommand();
 
-        var response = await handler.Handle(command);
+        var response = (await handler.Handle(command)).Value;
 
         Assert.Equal(DocumentId, response.DocumentId);
         Assert.Equal(version.Id, response.VersionId);

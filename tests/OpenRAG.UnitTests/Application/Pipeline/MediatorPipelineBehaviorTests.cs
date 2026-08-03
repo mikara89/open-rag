@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using OpenRAG.Application;
 using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Common;
+using OpenRAG.Application.Common.Results;
 using OpenRAG.Application.Documents.GetDocumentDetail;
 using OpenRAG.Application.Pipeline;
 using OpenRAG.Application.Pipeline.Behaviors;
@@ -19,40 +20,41 @@ public sealed class MediatorPipelineBehaviorTests
     private static readonly Guid UserId = new("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 
     [Fact]
-    public async Task Validation_without_validators_executes_handler_once()
+    public async Task Result_validation_without_validators_executes_handler_once()
     {
-        var behavior = new ValidationBehavior<TestCommand, string>([]);
+        var behavior = new ResultValidationBehavior<ResultTestCommand, Result<string>>([]);
         var calls = 0;
 
         var result = await behavior.Handle(
-            new TestCommand("corr", "sensitive-question"),
+            new ResultTestCommand("corr", "sensitive-question"),
             Handler,
             CancellationToken.None);
 
-        Assert.Equal("handled", result);
+        Assert.True(result.IsSuccess);
+        Assert.Equal("handled", result.Value);
         Assert.Equal(1, calls);
         return;
 
-        ValueTask<string> Handler(TestCommand _, CancellationToken __)
+        ValueTask<Result<string>> Handler(ResultTestCommand _, CancellationToken __)
         {
             calls++;
-            return ValueTask.FromResult("handled");
+            return ValueTask.FromResult(Result<string>.Success("handled"));
         }
     }
 
     [Fact]
-    public async Task Validation_with_valid_validator_executes_handler_once()
+    public async Task Result_validation_with_valid_validator_executes_handler_once()
     {
-        var validator = new RecordingValidator<TestCommand>("valid", []);
-        var behavior = new ValidationBehavior<TestCommand, string>([validator]);
+        var validator = new RecordingValidator<ResultTestCommand>("valid", []);
+        var behavior = new ResultValidationBehavior<ResultTestCommand, Result<string>>([validator]);
         var calls = 0;
 
         await behavior.Handle(
-            new TestCommand("corr", "sensitive-question"),
+            new ResultTestCommand("corr", "sensitive-question"),
             (_, _) =>
             {
                 calls++;
-                return ValueTask.FromResult("handled");
+                return ValueTask.FromResult(Result<string>.Success("handled"));
             },
             CancellationToken.None);
 
@@ -61,47 +63,48 @@ public sealed class MediatorPipelineBehaviorTests
     }
 
     [Fact]
-    public async Task Validation_failure_short_circuits_handler_and_later_validators()
+    public async Task Result_validation_aggregates_failures_and_short_circuits_handler()
     {
         var order = new List<string>();
-        var failure = new RequestValidationException("invalid");
-        var first = new RecordingValidator<TestCommand>("first", order, failure);
-        var second = new RecordingValidator<TestCommand>("second", order);
-        var behavior = new ValidationBehavior<TestCommand, string>([first, second]);
+        var firstError = ApplicationErrors.InvalidRequest("request.first", "First invalid.", "first");
+        var secondError = ApplicationErrors.InvalidRequest("request.second", "Second invalid.", "second");
+        var first = new RecordingValidator<ResultTestCommand>("first", order, [firstError]);
+        var second = new RecordingValidator<ResultTestCommand>("second", order, [secondError]);
+        var behavior = new ResultValidationBehavior<ResultTestCommand, Result<string>>([first, second]);
         var handlerCalls = 0;
 
-        var actual = await Assert.ThrowsAsync<RequestValidationException>(
-            () => behavior.Handle(
-                new TestCommand("corr", "sensitive-question"),
-                (_, _) =>
-                {
-                    handlerCalls++;
-                    return ValueTask.FromResult("handled");
-                },
-                CancellationToken.None).AsTask());
+        var result = await behavior.Handle(
+            new ResultTestCommand("corr", "sensitive-question"),
+            (_, _) =>
+            {
+                handlerCalls++;
+                return ValueTask.FromResult(Result<string>.Success("handled"));
+            },
+            CancellationToken.None);
 
-        Assert.Same(failure, actual);
-        Assert.Equal(["first"], order);
-        Assert.Equal(0, second.CallCount);
+        Assert.True(result.IsFailure);
+        Assert.Equal([firstError, secondError], result.Errors);
+        Assert.Equal(["first", "second"], order);
+        Assert.Equal(1, second.CallCount);
         Assert.Equal(0, handlerCalls);
     }
 
     [Fact]
-    public async Task Validation_executes_multiple_validators_in_registration_order()
+    public async Task Result_validation_executes_validators_in_registration_order()
     {
         var order = new List<string>();
-        var behavior = new ValidationBehavior<TestCommand, string>(
+        var behavior = new ResultValidationBehavior<ResultTestCommand, Result<string>>(
         [
-            new RecordingValidator<TestCommand>("first", order),
-            new RecordingValidator<TestCommand>("second", order)
+            new RecordingValidator<ResultTestCommand>("first", order),
+            new RecordingValidator<ResultTestCommand>("second", order)
         ]);
 
         await behavior.Handle(
-            new TestCommand("corr", "sensitive-question"),
+            new ResultTestCommand("corr", "sensitive-question"),
             (_, _) =>
             {
                 order.Add("handler");
-                return ValueTask.FromResult("handled");
+                return ValueTask.FromResult(Result<string>.Success("handled"));
             },
             CancellationToken.None);
 
@@ -109,24 +112,68 @@ public sealed class MediatorPipelineBehaviorTests
     }
 
     [Fact]
-    public async Task Validation_propagates_cancellation_without_handler_execution()
+    public async Task Result_validation_propagates_cancellation_without_handler_execution()
     {
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
-        var behavior = new ValidationBehavior<TestCommand, string>([]);
+        var behavior = new ResultValidationBehavior<ResultTestCommand, Result<string>>([]);
         var handlerCalls = 0;
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => behavior.Handle(
-                new TestCommand("corr", "sensitive-question"),
+                new ResultTestCommand("corr", "sensitive-question"),
+                (_, _) =>
+                {
+                    handlerCalls++;
+                    return ValueTask.FromResult(Result<string>.Success("handled"));
+                },
+                cancellation.Token).AsTask());
+
+        Assert.Equal(0, handlerCalls);
+    }
+
+    [Fact]
+    public async Task Worker_validation_throws_and_does_not_invoke_handler_when_invalid()
+    {
+        var error = ApplicationErrors.InvalidRequest(
+            "worker.document_id_required",
+            "DocumentId cannot be empty.",
+            "documentId");
+        var validator = new RecordingValidator<WorkerTestCommand>("worker", [], [error]);
+        var behavior = new WorkerValidationBehavior<WorkerTestCommand, string>([validator]);
+        var handlerCalls = 0;
+
+        var exception = await Assert.ThrowsAsync<RequestValidationException>(
+            () => behavior.Handle(
+                new WorkerTestCommand(TenantId, "corr", "sensitive-content"),
                 (_, _) =>
                 {
                     handlerCalls++;
                     return ValueTask.FromResult("handled");
                 },
-                cancellation.Token).AsTask());
+                CancellationToken.None).AsTask());
 
+        Assert.Contains("DocumentId", exception.Message, StringComparison.Ordinal);
         Assert.Equal(0, handlerCalls);
+    }
+
+    [Fact]
+    public async Task Worker_validation_executes_handler_once_when_valid()
+    {
+        var behavior = new WorkerValidationBehavior<WorkerTestCommand, string>([]);
+        var handlerCalls = 0;
+
+        var result = await behavior.Handle(
+            new WorkerTestCommand(TenantId, "corr", "sensitive-content"),
+            (_, _) =>
+            {
+                handlerCalls++;
+                return ValueTask.FromResult("handled");
+            },
+            CancellationToken.None);
+
+        Assert.Equal("handled", result);
+        Assert.Equal(1, handlerCalls);
     }
 
     [Fact]
@@ -245,11 +292,40 @@ public sealed class MediatorPipelineBehaviorTests
         Assert.Equal("command", activity.GetTagItem("openrag.message.category"));
         Assert.Equal("success", activity.GetTagItem("openrag.message.outcome"));
         Assert.Equal("corr-safe", activity.GetTagItem("openrag.correlation_id"));
-        Assert.Equal(TenantId.ToString("D"), activity.GetTagItem("openrag.tenant_id"));
+        Assert.Null(activity.GetTagItem("openrag.tenant_id"));
         Assert.NotNull(activity.GetTagItem("openrag.duration_ms"));
         Assert.DoesNotContain(
             activity.TagObjects,
             tag => string.Equals(tag.Value?.ToString(), message.SensitiveValue, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(ApplicationErrorType.Validation, "validation", "request.invalid")]
+    [InlineData(ApplicationErrorType.NotFound, "not_found", "resource.not_found")]
+    [InlineData(ApplicationErrorType.Conflict, "conflict", "document.processing")]
+    public async Task Telemetry_marks_expected_result_failures_as_rejected(
+        ApplicationErrorType type,
+        string expectedType,
+        string code)
+    {
+        using var listener = CreateActivityListener();
+        var behavior = new TelemetryBehavior<ResultTestCommand, Result<string>>();
+        var error = new ApplicationError(code, "safe", type);
+
+        var result = await behavior.Handle(
+            new ResultTestCommand("corr", "sensitive-question"),
+            (_, _) => ValueTask.FromResult(Result<string>.Failure(error)),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        var activity = Assert.Single(listener.StoppedActivities);
+        Assert.Equal("rejected", activity.GetTagItem("openrag.message.outcome"));
+        Assert.Equal(expectedType, activity.GetTagItem("openrag.error.type"));
+        Assert.Equal(code, activity.GetTagItem("openrag.error.code"));
+        Assert.Equal(ActivityStatusCode.Unset, activity.Status);
+        Assert.DoesNotContain(
+            activity.TagObjects,
+            tag => string.Equals(tag.Value?.ToString(), "sensitive-question", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -352,14 +428,14 @@ public sealed class MediatorPipelineBehaviorTests
                 typeof(TelemetryBehavior<,>),
                 contextBehavior,
                 typeof(LoggingScopeBehavior<,>),
-                typeof(ValidationBehavior<,>)
+                typeof(ResultValidationBehavior<,>)
             }
             :
             [
                 typeof(TelemetryBehavior<,>),
                 typeof(LoggingScopeBehavior<,>),
                 contextBehavior,
-                typeof(ValidationBehavior<,>)
+                typeof(WorkerValidationBehavior<,>)
             ];
 
         Assert.Equal(expected, behaviorTypes);
@@ -422,7 +498,7 @@ public sealed class MediatorPipelineBehaviorTests
         using var apiProvider = apiServices.BuildServiceProvider();
 
         var apiAuthPipeline = apiProvider
-            .GetServices<IPipelineBehavior<GetDocumentDetailQuery, GetDocumentDetailResponse>>()
+            .GetServices<IPipelineBehavior<GetDocumentDetailQuery, Result<GetDocumentDetailResponse>>>()
             .ToArray();
         var apiWorkerPipeline = apiProvider
             .GetServices<IPipelineBehavior<GenerateEmbeddingsCommand, GenerateEmbeddingsResponse>>()
@@ -441,7 +517,7 @@ public sealed class MediatorPipelineBehaviorTests
             .GetServices<IPipelineBehavior<GenerateEmbeddingsCommand, GenerateEmbeddingsResponse>>()
             .ToArray();
         var workerAuthPipeline = workerProvider
-            .GetServices<IPipelineBehavior<GetDocumentDetailQuery, GetDocumentDetailResponse>>()
+            .GetServices<IPipelineBehavior<GetDocumentDetailQuery, Result<GetDocumentDetailResponse>>>()
             .ToArray();
 
         Assert.Contains(workerPipeline, behavior => behavior.GetType().Name.StartsWith("ExplicitTenantMessageBehavior", StringComparison.Ordinal));
@@ -459,6 +535,12 @@ public sealed class MediatorPipelineBehaviorTests
 
     private sealed record TestCommand(string CorrelationId, string SensitiveValue)
         : IOpenRagCommand<string>, ICorrelatedMessage;
+
+    private sealed record ResultTestCommand(string CorrelationId, string SensitiveValue)
+        : IOpenRagCommand<Result<string>>,
+          IAuthenticatedApplicationMessage,
+          IResultApplicationMessage,
+          ICorrelatedMessage;
 
     private sealed record AuthenticatedTestCommand
         : IOpenRagCommand<string>, IAuthenticatedApplicationMessage;
@@ -498,30 +580,29 @@ public sealed class MediatorPipelineBehaviorTests
     {
         private readonly string _name;
         private readonly ICollection<string> _order;
-        private readonly Exception? _exception;
+        private readonly IReadOnlyList<ApplicationError> _errors;
 
         public RecordingValidator(
             string name,
             ICollection<string> order,
-            Exception? exception = null)
+            IReadOnlyList<ApplicationError>? errors = null)
         {
             _name = name;
             _order = order;
-            _exception = exception;
+            _errors = errors ?? [];
         }
 
         public int CallCount { get; private set; }
 
-        public ValueTask ValidateAsync(TMessage message, CancellationToken cancellationToken)
+        public ValueTask<IReadOnlyList<ApplicationError>> ValidateAsync(
+            TMessage message,
+            CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             CallCount++;
             _order.Add(_name);
 
-            if (_exception is not null)
-                return ValueTask.FromException(_exception);
-
-            return ValueTask.CompletedTask;
+            return ValueTask.FromResult(_errors);
         }
     }
 

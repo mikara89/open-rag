@@ -20,10 +20,11 @@ public sealed class DeleteDocumentHandlerTests
         var fakes = new Fakes(null);
         var handler = CreateHandler(fakes);
 
-        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
-            handler.Handle(new DeleteDocumentCommand(DocId)).AsTask());
+        var result = await handler.Handle(new DeleteDocumentCommand(DocId));
 
-        Assert.Contains("not found", ex.Message);
+        Assert.True(result.IsFailure);
+        Assert.Equal("resource.not_found", result.PrimaryError.Code);
+        Assert.False(fakes.DocRepo.DeleteCalled);
     }
 
     [Fact]
@@ -34,10 +35,11 @@ public sealed class DeleteDocumentHandlerTests
         var fakes = new Fakes(doc);
         var handler = CreateHandler(fakes);
 
-        var ex = await Assert.ThrowsAsync<ResourceConflictException>(() =>
-            handler.Handle(new DeleteDocumentCommand(DocId)).AsTask());
+        var result = await handler.Handle(new DeleteDocumentCommand(DocId));
 
-        Assert.Contains("processing", ex.Message.ToLower());
+        Assert.True(result.IsFailure);
+        Assert.Equal("document.processing", result.PrimaryError.Code);
+        Assert.False(fakes.DocRepo.DeleteCalled);
     }
 
     [Fact]
@@ -47,7 +49,7 @@ public sealed class DeleteDocumentHandlerTests
         var fakes = new Fakes(doc);
         var handler = CreateHandler(fakes);
 
-        var response = await handler.Handle(new DeleteDocumentCommand(DocId));
+        var response = (await handler.Handle(new DeleteDocumentCommand(DocId))).Value;
 
         Assert.True(response.Deleted);
         Assert.True(fakes.DocRepo.DeleteCalled);
@@ -74,7 +76,7 @@ public sealed class DeleteDocumentHandlerTests
         var fakes = new Fakes(doc);
         var handler = CreateHandler(fakes);
 
-        var response = await handler.Handle(new DeleteDocumentCommand(DocId));
+        var response = (await handler.Handle(new DeleteDocumentCommand(DocId))).Value;
 
         Assert.True(response.Deleted);
     }
@@ -89,9 +91,26 @@ public sealed class DeleteDocumentHandlerTests
         var fakes = new Fakes(doc);
         var handler = CreateHandler(fakes);
 
-        var response = await handler.Handle(new DeleteDocumentCommand(DocId));
+        var response = (await handler.Handle(new DeleteDocumentCommand(DocId))).Value;
 
         Assert.True(response.Deleted);
+    }
+
+    [Fact]
+    public async Task Propagates_cancellation_from_storage_cleanup()
+    {
+        var doc = CreateReadyDocument();
+        var fakes = new Fakes(doc);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var handler = CreateHandler(
+            fakes,
+            new CancellingFileStorage());
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await handler.Handle(
+                new DeleteDocumentCommand(DocId),
+                cancellation.Token));
     }
 
     private static Document CreateReadyDocument()
@@ -108,10 +127,12 @@ public sealed class DeleteDocumentHandlerTests
         return doc;
     }
 
-    private static DeleteDocumentHandler CreateHandler(Fakes fakes)
+    private static DeleteDocumentHandler CreateHandler(
+        Fakes fakes,
+        IFileStorage? fileStorage = null)
     {
         return new DeleteDocumentHandler(
-            fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, new StubFileStorage(),
+            fakes.DocRepo, fakes.ChunkRepo, fakes.EmbeddingRepo, fileStorage ?? new StubFileStorage(),
             new OpenRAG.Application.Storage.DocumentObjectKeyPolicy(),
             fakes.Tenant, fakes.Uow,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<DeleteDocumentHandler>.Instance);
@@ -221,5 +242,21 @@ public sealed class DeleteDocumentHandlerTests
 
         public Task DeleteAsync(string objectKey, CancellationToken ct = default)
             => Task.CompletedTask;
+    }
+
+    private sealed class CancellingFileStorage : IFileStorage
+    {
+        public Task<StoredObjectResult> SaveAsync(
+            Stream content,
+            string objectKey,
+            string contentType,
+            CancellationToken ct = default) =>
+            throw new NotSupportedException();
+
+        public Task<Stream> OpenReadAsync(string objectKey, CancellationToken ct = default) =>
+            throw new NotSupportedException();
+
+        public Task DeleteAsync(string objectKey, CancellationToken ct = default) =>
+            Task.FromCanceled(ct);
     }
 }

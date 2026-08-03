@@ -2,10 +2,12 @@ using Mediator;
 using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Common;
+using OpenRAG.Application.Common.Results;
 
 namespace OpenRAG.Application.Documents.ListDocumentChunks;
 
-public sealed class ListDocumentChunksHandler : IRequestHandler<ListDocumentChunksQuery, ListDocumentChunksResponse>
+public sealed class ListDocumentChunksHandler
+    : IRequestHandler<ListDocumentChunksQuery, Result<ListDocumentChunksResponse>>
 {
     private const int MaxPageSize = 100;
     private const int PreviewLength = 300;
@@ -24,22 +26,57 @@ public sealed class ListDocumentChunksHandler : IRequestHandler<ListDocumentChun
         _currentTenant = currentTenant;
     }
 
-    public async ValueTask<ListDocumentChunksResponse> Handle(
+    public async ValueTask<Result<ListDocumentChunksResponse>> Handle(
         ListDocumentChunksQuery query,
         CancellationToken cancellationToken = default)
     {
-        var tenantId = _currentTenant.TenantId;
         if (query.DocumentId == Guid.Empty || query.VersionId == Guid.Empty)
-            throw new RequestValidationException("Document and version identifiers must be non-empty.");
-        var pageNumber = Math.Max(1, query.PageNumber);
-        var pageSize = Math.Clamp(query.PageSize, 1, MaxPageSize);
+        {
+            var error = query.DocumentId == Guid.Empty
+                ? ApplicationErrors.InvalidRequest(
+                    "request.document_id_required", "DocumentId cannot be empty.", "documentId")
+                : ApplicationErrors.InvalidRequest(
+                    "request.version_id_required", "VersionId cannot be empty.", "versionId");
+            return Result<ListDocumentChunksResponse>.Failure(error);
+        }
+
+        if (query.PageNumber <= 0)
+        {
+            return Result<ListDocumentChunksResponse>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    "request.page_number_invalid",
+                    "Page number must be greater than zero.",
+                    "pageNumber"));
+        }
+
+        if (query.PageSize <= 0 || query.PageSize > MaxPageSize)
+        {
+            return Result<ListDocumentChunksResponse>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    "request.page_size_invalid",
+                    $"Page size must be between 1 and {MaxPageSize}.",
+                    "pageSize"));
+        }
+
+        if (query.PageNumberFilter <= 0)
+        {
+            return Result<ListDocumentChunksResponse>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    "request.page_number_filter_invalid",
+                    "Page number filter must be greater than zero.",
+                    "pageNumberFilter"));
+        }
+
+        var tenantId = _currentTenant.TenantId;
+        var pageNumber = query.PageNumber;
+        var pageSize = query.PageSize;
 
         // Validate document/version exist for tenant
         var version = await _documentRepository.GetVersionAsync(
             tenantId, query.DocumentId, query.VersionId, cancellationToken);
 
         if (version is null)
-            throw new ResourceNotFoundException();
+            return Result<ListDocumentChunksResponse>.Failure(ApplicationErrors.ResourceNotFound());
 
         IsolationGuard.Equal(version.TenantId, tenantId, nameof(version.TenantId));
         IsolationGuard.Equal(version.DocumentId, query.DocumentId, nameof(version.DocumentId));
@@ -73,6 +110,7 @@ public sealed class ListDocumentChunksHandler : IRequestHandler<ListDocumentChun
             CreatedAt: c.CreatedAt
         )).ToList();
 
-        return new ListDocumentChunksResponse(items, pageNumber, pageSize, result.TotalCount);
+        return Result<ListDocumentChunksResponse>.Success(
+            new ListDocumentChunksResponse(items, pageNumber, pageSize, result.TotalCount));
     }
 }

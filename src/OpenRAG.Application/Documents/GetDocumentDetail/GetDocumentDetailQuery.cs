@@ -1,10 +1,13 @@
+using OpenRAG.Application.Common.Results;
 using OpenRAG.Application.Pipeline;
 
 namespace OpenRAG.Application.Documents.GetDocumentDetail;
 
 public sealed record GetDocumentDetailQuery(
     Guid DocumentId
-) : IOpenRagQuery<GetDocumentDetailResponse>, IAuthenticatedApplicationMessage;
+) : IOpenRagQuery<Result<GetDocumentDetailResponse>>,
+    IAuthenticatedApplicationMessage,
+    IResultApplicationMessage;
 
 public sealed record GetDocumentDetailResponse(
     Guid DocumentId,

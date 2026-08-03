@@ -4,11 +4,13 @@ using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Abstractions.Storage;
 using OpenRAG.Application.Common;
+using OpenRAG.Application.Common.Results;
 using OpenRAG.Domain.Documents;
 
 namespace OpenRAG.Application.Documents.DeleteDocument;
 
-public sealed class DeleteDocumentHandler : IRequestHandler<DeleteDocumentCommand, DeleteDocumentResponse>
+public sealed class DeleteDocumentHandler
+    : IRequestHandler<DeleteDocumentCommand, Result<DeleteDocumentResponse>>
 {
     private readonly IDocumentRepository _documentRepository;
     private readonly IDocumentChunkRepository _chunkRepository;
@@ -39,12 +41,18 @@ public sealed class DeleteDocumentHandler : IRequestHandler<DeleteDocumentComman
         _logger = logger;
     }
 
-    public async ValueTask<DeleteDocumentResponse> Handle(
+    public async ValueTask<Result<DeleteDocumentResponse>> Handle(
         DeleteDocumentCommand command,
         CancellationToken cancellationToken = default)
     {
         if (command.DocumentId == Guid.Empty)
-            throw new RequestValidationException("DocumentId cannot be empty.");
+        {
+            return Result<DeleteDocumentResponse>.Failure(
+                ApplicationErrors.InvalidRequest(
+                    "request.document_id_required",
+                    "DocumentId cannot be empty.",
+                    "documentId"));
+        }
 
         var tenantId = _currentTenant.TenantId;
 
@@ -53,15 +61,19 @@ public sealed class DeleteDocumentHandler : IRequestHandler<DeleteDocumentComman
             tenantId, command.DocumentId, cancellationToken);
 
         if (document is null)
-            throw new ResourceNotFoundException();
+            return Result<DeleteDocumentResponse>.Failure(ApplicationErrors.ResourceNotFound());
 
         IsolationGuard.Equal(document.TenantId, tenantId, nameof(document.TenantId));
         IsolationGuard.Equal(document.Id, command.DocumentId, nameof(document.Id));
 
         // Reject if processing — avoid partial state
         if (document.Status == DocumentStatus.Processing)
-            throw new ResourceConflictException(
-                "The document cannot be deleted while it is processing.");
+        {
+            return Result<DeleteDocumentResponse>.Failure(
+                ApplicationErrors.ResourceConflict(
+                    "document.processing",
+                    "The document cannot be deleted while it is processing."));
+        }
 
         ValidateStorageKeys(document, tenantId);
 
@@ -96,7 +108,8 @@ public sealed class DeleteDocumentHandler : IRequestHandler<DeleteDocumentComman
         // Best-effort physical storage cleanup after authorization and key validation.
         await TryCleanupStorageArtifacts(document, cancellationToken);
 
-        return new DeleteDocumentResponse(command.DocumentId, true);
+        return Result<DeleteDocumentResponse>.Success(
+            new DeleteDocumentResponse(command.DocumentId, true));
     }
 
     /// <summary>
@@ -165,6 +178,10 @@ public sealed class DeleteDocumentHandler : IRequestHandler<DeleteDocumentComman
         try
         {
             await _fileStorage.DeleteAsync(objectKey, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {

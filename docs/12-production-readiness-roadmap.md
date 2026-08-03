@@ -29,7 +29,7 @@ This is a production-oriented development baseline, not a production deployment.
 - **Dependencies:** P0.2 authentication foundation.
 - **Status:** Complete — HTTP tenant identity is resolved only from exactly one validated non-empty GUID JWT claim; request spoofing cannot override it; the development fallback is removed; CAP events and Worker commands preserve tenant context explicitly. The final P0.3 validation run passed all 403 tests, dependency auditing, format checks, and documentation checks.
 
-> Trusted tenant resolution and P0.4 code-level authorization/isolation are complete. The later P0.4.1 architectural improvement is also complete. P0.5 live adversarial infrastructure remains planned.
+> Trusted tenant resolution, P0.4 code-level authorization/isolation, P0.4.1 pipelines, and P0.4.2 hybrid Result handling are complete. P0.5 live adversarial infrastructure remains planned.
 
 ### P0.4 — Authorization and retrieval isolation
 
@@ -45,11 +45,18 @@ This is a production-oriented development baseline, not a production deployment.
 - **Dependencies:** Completed P0.4 authorization/isolation foundation and existing scoped Mediator 3.0.2 composition.
 - **Status:** Complete — 17 requests have explicit command/query categories and 16 primitive validators. The API order is telemetry → authenticated context → logging → validation → handler; invalid production context accessors are normalized before logging. The Worker order remains telemetry → logging → explicit tenant → validation → handler. No resource authorization, transactions, CAP behavior, or HTTP exception mapping moved into pipelines.
 
+### P0.4.2 — Hybrid Result and application error model
+
+- **Objective:** Represent expected authenticated HTTP validation, missing-resource, and conflict outcomes with a minimal Application Result model while retaining exceptions for technical, cancellation, unexpected, and isolation failures.
+- **Acceptance criteria:** All 12 authenticated API messages return `Result<T>`; API and Worker validation retain distinct semantics; stable errors map to compatible Problem Details; Result wrappers never enter HTTP schemas; telemetry distinguishes rejection from error; Worker/CAP retries and acknowledgements are unchanged.
+- **Dependencies:** Completed P0.4 isolation and P0.4.1 host-specific Mediator pipeline foundation.
+- **Status:** Complete — API validation aggregates structured errors into failed Results; handlers return expected not-found/conflict outcomes; 400/404/409 mapping stays API-only; missing and foreign resources share `resource.not_found`; isolation and technical failures still throw; Worker commands remain exception-based. See [the error-model inventory](18-hybrid-result-error-model.md) and [ADR 0005](adr/0005-use-a-hybrid-result-model-for-expected-api-outcomes.md).
+
 ### P0.5 — Cross-tenant security integration tests
 
 - **Objective:** Prove that one tenant cannot read, mutate, retrieve, reprocess, or delete another tenant's data.
 - **Acceptance criteria:** Automated integration tests exercise API, persistence, vector retrieval, background processing, and storage boundaries with positive and negative tenant cases.
-- **Dependencies:** P0.2 through P0.4 plus disposable integration-test infrastructure.
+- **Dependencies:** P0.2 through P0.4.2 plus disposable integration-test infrastructure.
 - **Status:** Planned
 
 ## Priority gaps

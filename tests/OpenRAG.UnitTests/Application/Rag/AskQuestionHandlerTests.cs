@@ -25,10 +25,9 @@ public sealed class AskQuestionHandlerTests
             Model: "gpt-4",
             CorrelationId: "test-1");
 
-        var ex = await Assert.ThrowsAsync<RequestValidationException>(
-            () => handler.Handle(query).AsTask());
+        var result = await handler.Handle(query);
 
-        Assert.Contains("Question", ex.Message);
+        Assert.Equal("request.question_required", result.PrimaryError.Code);
     }
 
     [Fact]
@@ -42,10 +41,9 @@ public sealed class AskQuestionHandlerTests
             Model: "gpt-4",
             CorrelationId: "test-2");
 
-        var ex = await Assert.ThrowsAsync<RequestValidationException>(
-            () => handler.Handle(query).AsTask());
+        var result = await handler.Handle(query);
 
-        Assert.Contains("Question", ex.Message);
+        Assert.Equal("request.question_required", result.PrimaryError.Code);
     }
 
     [Fact]
@@ -59,10 +57,9 @@ public sealed class AskQuestionHandlerTests
             Model: "gpt-4",
             CorrelationId: "test-3");
 
-        var ex = await Assert.ThrowsAsync<RequestValidationException>(
-            () => handler.Handle(query).AsTask());
+        var result = await handler.Handle(query);
 
-        Assert.Contains("TopK", ex.Message);
+        Assert.Equal("request.top_k_invalid", result.PrimaryError.Code);
     }
 
     [Fact]
@@ -76,10 +73,9 @@ public sealed class AskQuestionHandlerTests
             Model: "gpt-4",
             CorrelationId: "test-4");
 
-        var ex = await Assert.ThrowsAsync<RequestValidationException>(
-            () => handler.Handle(query).AsTask());
+        var result = await handler.Handle(query);
 
-        Assert.Contains("TopK", ex.Message);
+        Assert.Equal("request.top_k_invalid", result.PrimaryError.Code);
     }
 
     [Fact]
@@ -93,10 +89,9 @@ public sealed class AskQuestionHandlerTests
             Model: "",
             CorrelationId: "test-5");
 
-        var ex = await Assert.ThrowsAsync<RequestValidationException>(
-            () => handler.Handle(query).AsTask());
+        var result = await handler.Handle(query);
 
-        Assert.Contains("Model", ex.Message);
+        Assert.Equal("request.model_required", result.PrimaryError.Code);
     }
 
     [Fact]
@@ -142,7 +137,7 @@ public sealed class AskQuestionHandlerTests
         var handler = CreateHandler(fakes);
         var query = CreateValidQuery();
 
-        var response = await handler.Handle(query);
+        var response = (await handler.Handle(query)).Value;
 
         Assert.NotEmpty(response.Citations);
         Assert.All(response.Citations, c =>
@@ -161,7 +156,7 @@ public sealed class AskQuestionHandlerTests
         var handler = CreateHandler(fakes);
         var query = CreateValidQuery();
 
-        var response = await handler.Handle(query);
+        var response = (await handler.Handle(query)).Value;
 
         Assert.NotEmpty(response.RetrievedChunks);
         Assert.All(response.RetrievedChunks, c =>
@@ -180,7 +175,7 @@ public sealed class AskQuestionHandlerTests
         var handler = CreateHandler(fakes);
         var query = CreateValidQuery();
 
-        var response = await handler.Handle(query);
+        var response = (await handler.Handle(query)).Value;
 
         Assert.Equal("I could not find relevant information in the indexed documents.", response.Answer);
         Assert.Empty(response.Citations);
@@ -223,7 +218,7 @@ public sealed class AskQuestionHandlerTests
         var handler = CreateHandler(fakes);
         var query = CreateValidQuery();
 
-        var response = await handler.Handle(query);
+        var response = (await handler.Handle(query)).Value;
 
         Assert.False(string.IsNullOrWhiteSpace(response.Answer));
         Assert.Equal("mock-chat", response.Model);
@@ -238,7 +233,7 @@ public sealed class AskQuestionHandlerTests
         var handler = CreateHandler(fakes);
         var query = CreateValidQuery();
 
-        var response = await handler.Handle(query);
+        var response = (await handler.Handle(query)).Value;
 
         Assert.Equal("I could not find relevant information in the indexed documents.", response.Answer);
     }
@@ -252,7 +247,7 @@ public sealed class AskQuestionHandlerTests
         var handler = CreateHandler(fakes);
         var query = CreateValidQuery();
 
-        var response = await handler.Handle(query);
+        var response = (await handler.Handle(query)).Value;
 
         Assert.Equal("I could not find relevant information in the indexed documents.", response.Answer);
     }
@@ -312,13 +307,13 @@ public sealed class AskQuestionHandlerTests
         foreign.DocumentAuthorizationRepository.ExistingIds = new HashSet<Guid>();
         var query = CreateValidQuery() with { FilterDocumentIds = [requestedId] };
 
-        var missingException = await Assert.ThrowsAsync<ResourceNotFoundException>(
-            () => CreateHandler(missing).Handle(query).AsTask());
-        var foreignException = await Assert.ThrowsAsync<ResourceNotFoundException>(
-            () => CreateHandler(foreign).Handle(query).AsTask());
+        var missingResult = await CreateHandler(missing).Handle(query);
+        var foreignResult = await CreateHandler(foreign).Handle(query);
 
-        Assert.Equal(missingException.Message, foreignException.Message);
-        Assert.Equal(ResourceNotFoundException.PublicMessage, missingException.Message);
+        Assert.True(missingResult.IsFailure);
+        Assert.True(foreignResult.IsFailure);
+        Assert.Equal(missingResult.Errors, foreignResult.Errors);
+        Assert.Equal("resource.not_found", missingResult.PrimaryError.Code);
         Assert.False(missing.EmbeddingService.Called);
         Assert.False(missing.VectorSearchService.Called);
         Assert.False(missing.ChatCompletionService.Called);
@@ -334,13 +329,13 @@ public sealed class AskQuestionHandlerTests
         var oversizedFakes = CreateFakes();
         var oversized = Enumerable.Range(0, 101).Select(_ => Guid.NewGuid()).ToArray();
 
-        await Assert.ThrowsAsync<RequestValidationException>(() =>
-            CreateHandler(emptyFakes).Handle(
-                CreateValidQuery() with { FilterDocumentIds = [Guid.Empty] }).AsTask());
-        await Assert.ThrowsAsync<RequestValidationException>(() =>
-            CreateHandler(oversizedFakes).Handle(
-                CreateValidQuery() with { FilterDocumentIds = oversized }).AsTask());
+        var emptyResult = await CreateHandler(emptyFakes).Handle(
+            CreateValidQuery() with { FilterDocumentIds = [Guid.Empty] });
+        var oversizedResult = await CreateHandler(oversizedFakes).Handle(
+            CreateValidQuery() with { FilterDocumentIds = oversized });
 
+        Assert.Equal("request.document_filter_invalid", emptyResult.PrimaryError.Code);
+        Assert.Equal("request.document_filter_invalid", oversizedResult.PrimaryError.Code);
         Assert.False(emptyFakes.EmbeddingService.Called);
         Assert.False(oversizedFakes.EmbeddingService.Called);
     }
@@ -379,8 +374,8 @@ public sealed class AskQuestionHandlerTests
         var fakes = CreateFakes();
         fakes.VectorSearchService.Results = [result];
 
-        var response = await CreateHandler(fakes).Handle(
-            CreateValidQuery() with { FilterDocumentIds = [documentId] });
+        var response = (await CreateHandler(fakes).Handle(
+            CreateValidQuery() with { FilterDocumentIds = [documentId] })).Value;
 
         var prompt = Assert.Single(fakes.ChatCompletionService.LastRequest!.Messages, m => m.Role == "user");
         Assert.Contains("authorized context only", prompt.Content, StringComparison.Ordinal);

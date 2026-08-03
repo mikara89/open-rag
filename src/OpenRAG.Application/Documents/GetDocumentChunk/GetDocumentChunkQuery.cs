@@ -1,3 +1,4 @@
+using OpenRAG.Application.Common.Results;
 using OpenRAG.Application.Pipeline;
 
 namespace OpenRAG.Application.Documents.GetDocumentChunk;
@@ -6,7 +7,9 @@ public sealed record GetDocumentChunkQuery(
     Guid DocumentId,
     Guid VersionId,
     Guid ChunkId
-) : IOpenRagQuery<GetDocumentChunkResponse>, IAuthenticatedApplicationMessage;
+) : IOpenRagQuery<Result<GetDocumentChunkResponse>>,
+    IAuthenticatedApplicationMessage,
+    IResultApplicationMessage;
 
 public sealed record GetDocumentChunkResponse(
     Guid ChunkId,

@@ -1,5 +1,7 @@
 using Mediator;
+using Microsoft.AspNetCore.Mvc;
 using OpenRAG.Api.Errors;
+using OpenRAG.Api.Results;
 using OpenRAG.Api.Security;
 using OpenRAG.Application;
 using OpenRAG.Application.Documents.DeleteDocument;
@@ -59,6 +61,7 @@ api.MapGet("/documents", async (
     int? pageSize,
     string? status,
     string? search,
+    HttpContext httpContext,
     ISender sender,
     CancellationToken cancellationToken) =>
 {
@@ -69,13 +72,17 @@ api.MapGet("/documents", async (
         Search: search);
 
     var response = await sender.Send(query, cancellationToken);
-    return Results.Ok(response);
+    return response.ToHttpResult(httpContext, Results.Ok);
 })
-.WithName("ListDocuments");
+.WithName("ListDocuments")
+.Produces<ListDocumentsResponse>()
+.Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError);
 
 // Upload document
 api.MapPost("/documents/upload", async (
     IFormFile file,
+    HttpContext httpContext,
     ISender sender,
     CancellationToken cancellationToken) =>
 {
@@ -92,27 +99,38 @@ api.MapPost("/documents/upload", async (
 
     var response = await sender.Send(command, cancellationToken);
 
-    return Results.Created($"/api/documents/{response.DocumentId}/status", response);
+    return response.ToHttpResult(
+        httpContext,
+        value => Results.Created($"/api/documents/{value.DocumentId}/status", value));
 })
 .WithName("UploadDocument")
+.Produces<UploadDocumentResponse>(StatusCodes.Status201Created)
+.Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
 .DisableAntiforgery();
 
 api.MapGet("/documents/{documentId:guid}/status", async (
     Guid documentId,
+    HttpContext httpContext,
     ISender sender,
     CancellationToken cancellationToken) =>
 {
     var query = new GetDocumentStatusQuery(documentId);
     var response = await sender.Send(query, cancellationToken);
-    return Results.Ok(response);
+    return response.ToHttpResult(httpContext, Results.Ok);
 })
-.WithName("GetDocumentStatus");
+.WithName("GetDocumentStatus")
+.Produces<GetDocumentStatusResponse>()
+.Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+.Produces<ProblemDetails>(StatusCodes.Status404NotFound)
+.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError);
 
 // ── Reprocess endpoint ───────────────────────────────────────────
 
 api.MapPost("/documents/{documentId:guid}/reprocess", async (
     Guid documentId,
     ReprocessDocumentRequest request,
+    HttpContext httpContext,
     ISender sender,
     CancellationToken cancellationToken) =>
 {
@@ -128,61 +146,93 @@ api.MapPost("/documents/{documentId:guid}/reprocess", async (
 
     var response = await sender.Send(command, cancellationToken);
 
-    return Results.Accepted($"/api/documents/{response.DocumentId}/status", response);
+    return response.ToHttpResult(
+        httpContext,
+        value => Results.Accepted($"/api/documents/{value.DocumentId}/status", value));
 })
-.WithName("ReprocessDocument");
+.WithName("ReprocessDocument")
+.Produces<ReprocessDocumentResponse>(StatusCodes.Status202Accepted)
+.Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+.Produces<ProblemDetails>(StatusCodes.Status404NotFound)
+.Produces<ProblemDetails>(StatusCodes.Status409Conflict)
+.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError);
 
 // ── Document detail endpoint ──────────────────────────────────────
 
 api.MapGet("/documents/{documentId:guid}", async (
     Guid documentId,
+    HttpContext httpContext,
     ISender sender,
     CancellationToken cancellationToken) =>
 {
     var query = new GetDocumentDetailQuery(documentId);
     var response = await sender.Send(query, cancellationToken);
-    return Results.Ok(response);
+    return response.ToHttpResult(httpContext, Results.Ok);
 })
-.WithName("GetDocumentDetail");
+.WithName("GetDocumentDetail")
+.Produces<GetDocumentDetailResponse>()
+.Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+.Produces<ProblemDetails>(StatusCodes.Status404NotFound)
+.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError);
 
 // ── Delete document endpoint ──────────────────────────────────────
 
 api.MapDelete("/documents/{documentId:guid}", async (
     Guid documentId,
+    HttpContext httpContext,
     ISender sender,
     CancellationToken cancellationToken) =>
 {
     var command = new DeleteDocumentCommand(documentId);
     var response = await sender.Send(command, cancellationToken);
-    return Results.NoContent();
+    return response.ToHttpResult(httpContext, _ => Results.NoContent());
 })
-.WithName("DeleteDocument");
+.WithName("DeleteDocument")
+.Produces(StatusCodes.Status204NoContent)
+.Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+.Produces<ProblemDetails>(StatusCodes.Status404NotFound)
+.Produces<ProblemDetails>(StatusCodes.Status409Conflict)
+.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError);
 
 // ── Artifact preview endpoints ────────────────────────────────────
 
 api.MapGet("/documents/{documentId:guid}/versions/{versionId:guid}/artifacts/markdown", async (
     Guid documentId,
     Guid versionId,
+    HttpContext httpContext,
     ISender sender,
     CancellationToken cancellationToken) =>
 {
     var query = new GetMarkdownArtifactQuery(documentId, versionId);
     var response = await sender.Send(query, cancellationToken);
-    return Results.Text(response.Content, response.ContentType);
+    return response.ToHttpResult(
+        httpContext,
+        value => Results.Text(value.Content, value.ContentType));
 })
-.WithName("GetMarkdownArtifact");
+.WithName("GetMarkdownArtifact")
+.Produces<string>(StatusCodes.Status200OK, "text/markdown")
+.Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+.Produces<ProblemDetails>(StatusCodes.Status404NotFound)
+.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError);
 
 api.MapGet("/documents/{documentId:guid}/versions/{versionId:guid}/artifacts/json", async (
     Guid documentId,
     Guid versionId,
+    HttpContext httpContext,
     ISender sender,
     CancellationToken cancellationToken) =>
 {
     var query = new GetJsonArtifactQuery(documentId, versionId);
     var response = await sender.Send(query, cancellationToken);
-    return Results.Text(response.Content, response.ContentType);
+    return response.ToHttpResult(
+        httpContext,
+        value => Results.Text(value.Content, value.ContentType));
 })
-.WithName("GetJsonArtifact");
+.WithName("GetJsonArtifact")
+.Produces<string>(StatusCodes.Status200OK, "application/json")
+.Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+.Produces<ProblemDetails>(StatusCodes.Status404NotFound)
+.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError);
 
 // ── Chunk endpoints ───────────────────────────────────────────────
 
@@ -194,6 +244,7 @@ api.MapGet("/documents/{documentId:guid}/versions/{versionId:guid}/chunks", asyn
     string? search,
     string? sectionTitle,
     int? pageNumberFilter,
+    HttpContext httpContext,
     ISender sender,
     CancellationToken cancellationToken) =>
 {
@@ -202,55 +253,74 @@ api.MapGet("/documents/{documentId:guid}/versions/{versionId:guid}/chunks", asyn
         pageNumber ?? 1, pageSize ?? 20,
         search, sectionTitle, pageNumberFilter);
     var response = await sender.Send(query, cancellationToken);
-    return Results.Ok(response);
+    return response.ToHttpResult(httpContext, Results.Ok);
 })
-.WithName("ListDocumentChunks");
+.WithName("ListDocumentChunks")
+.Produces<ListDocumentChunksResponse>()
+.Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+.Produces<ProblemDetails>(StatusCodes.Status404NotFound)
+.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError);
 
 api.MapGet("/documents/{documentId:guid}/versions/{versionId:guid}/chunks/{chunkId:guid}", async (
     Guid documentId,
     Guid versionId,
     Guid chunkId,
+    HttpContext httpContext,
     ISender sender,
     CancellationToken cancellationToken) =>
 {
     var query = new GetDocumentChunkQuery(documentId, versionId, chunkId);
     var response = await sender.Send(query, cancellationToken);
-    return Results.Ok(response);
+    return response.ToHttpResult(httpContext, Results.Ok);
 })
-.WithName("GetDocumentChunk");
+.WithName("GetDocumentChunk")
+.Produces<GetDocumentChunkResponse>()
+.Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+.Produces<ProblemDetails>(StatusCodes.Status404NotFound)
+.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError);
 
 // ── Intelligence endpoint ─────────────────────────────────────────
 
 api.MapGet("/documents/{documentId:guid}/versions/{versionId:guid}/intelligence", async (
     Guid documentId,
     Guid versionId,
+    HttpContext httpContext,
     ISender sender,
     CancellationToken cancellationToken) =>
 {
     var query = new GetDocumentIntelligenceQuery(documentId, versionId);
     var response = await sender.Send(query, cancellationToken);
-    return Results.Ok(response);
+    return response.ToHttpResult(httpContext, Results.Ok);
 })
-.WithName("GetDocumentIntelligence");
+.WithName("GetDocumentIntelligence")
+.Produces<DocumentIntelligenceResponse>()
+.Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+.Produces<ProblemDetails>(StatusCodes.Status404NotFound)
+.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError);
 
 // ── RAG endpoints ─────────────────────────────────────────────────
 
 api.MapPost("/rag/ask", async (
     AskQuestionRequest request,
+    HttpContext httpContext,
     ISender sender,
     CancellationToken cancellationToken) =>
 {
     var query = new AskQuestionQuery(
         Question: request.Question,
         FilterDocumentIds: request.DocumentIds?.Count > 0 ? request.DocumentIds : null,
-        TopK: request.TopK > 0 ? request.TopK : null,
+        TopK: request.TopK,
         Model: request.Model ?? "mock-chat",
         CorrelationId: Guid.NewGuid().ToString("N"));
 
     var response = await sender.Send(query, cancellationToken);
-    return Results.Ok(response);
+    return response.ToHttpResult(httpContext, Results.Ok);
 })
-.WithName("AskQuestion");
+.WithName("AskQuestion")
+.Produces<AskQuestionResponse>()
+.Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+.Produces<ProblemDetails>(StatusCodes.Status404NotFound)
+.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError);
 
 // ── System diagnostics endpoint ──────────────────────────────────
 
@@ -272,7 +342,7 @@ app.Run();
 internal sealed record AskQuestionRequest(
     string Question,
     IReadOnlyCollection<Guid>? DocumentIds,
-    int TopK,
+    int? TopK,
     string? Model
 );
 

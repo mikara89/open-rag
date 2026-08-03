@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Options;
-using OpenRAG.Application.Common;
+using OpenRAG.Application.Common.Results;
 using OpenRAG.Application.Documents.DeleteDocument;
 using OpenRAG.Application.Documents.GetDocumentChunk;
 using OpenRAG.Application.Documents.GetDocumentDetail;
@@ -25,27 +25,47 @@ internal static class PrimitiveValidation
     internal const int MaximumPageSize = 100;
     internal const long MaximumUploadSizeBytes = 100L * 1024 * 1024;
 
-    internal static void NotEmpty(Guid value, string name)
+    internal static void NotEmpty(
+        Guid value,
+        ICollection<ApplicationError> errors,
+        string code,
+        string message,
+        string target)
     {
         if (value == Guid.Empty)
-            throw new RequestValidationException($"{name} cannot be empty.");
+            errors.Add(ApplicationErrors.InvalidRequest(code, message, target));
     }
 
-    internal static void NotBlank(string? value, string name)
+    internal static void NotBlank(
+        string? value,
+        ICollection<ApplicationError> errors,
+        string code,
+        string message,
+        string target)
     {
         if (string.IsNullOrWhiteSpace(value))
-            throw new RequestValidationException($"{name} cannot be empty.");
+            errors.Add(ApplicationErrors.InvalidRequest(code, message, target));
     }
 
-    internal static void Pagination(int pageNumber, int pageSize)
+    internal static void Pagination(
+        int pageNumber,
+        int pageSize,
+        ICollection<ApplicationError> errors)
     {
         if (pageNumber <= 0)
-            throw new RequestValidationException("Page number must be greater than zero.");
+        {
+            errors.Add(ApplicationErrors.InvalidRequest(
+                "request.page_number_invalid",
+                "Page number must be greater than zero.",
+                "pageNumber"));
+        }
 
         if (pageSize <= 0 || pageSize > MaximumPageSize)
         {
-            throw new RequestValidationException(
-                $"Page size must be between 1 and {MaximumPageSize}.");
+            errors.Add(ApplicationErrors.InvalidRequest(
+                "request.page_size_invalid",
+                $"Page size must be between 1 and {MaximumPageSize}.",
+                "pageSize"));
         }
     }
 
@@ -54,189 +74,311 @@ internal static class PrimitiveValidation
         Guid documentId,
         Guid versionId,
         Guid processingRunId,
-        string correlationId)
+        string correlationId,
+        ICollection<ApplicationError> errors)
     {
-        NotEmpty(tenantId, "TenantId");
-        NotEmpty(documentId, "DocumentId");
-        NotEmpty(versionId, "VersionId");
-        NotEmpty(processingRunId, "ProcessingRunId");
-        NotBlank(correlationId, "CorrelationId");
+        NotEmpty(tenantId, errors, "worker.tenant_id_required", "TenantId cannot be empty.", "tenantId");
+        NotEmpty(documentId, errors, "worker.document_id_required", "DocumentId cannot be empty.", "documentId");
+        NotEmpty(versionId, errors, "worker.version_id_required", "VersionId cannot be empty.", "versionId");
+        NotEmpty(
+            processingRunId,
+            errors,
+            "worker.processing_run_id_required",
+            "ProcessingRunId cannot be empty.",
+            "processingRunId");
+        NotBlank(
+            correlationId,
+            errors,
+            "worker.correlation_id_required",
+            "CorrelationId cannot be empty.",
+            "correlationId");
     }
 
-    internal static ValueTask Completed(CancellationToken cancellationToken)
+    internal static ValueTask<IReadOnlyList<ApplicationError>> Completed(
+        List<ApplicationError> errors,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return ValueTask.CompletedTask;
+        IReadOnlyList<ApplicationError> result = Array.AsReadOnly(errors.ToArray());
+        return ValueTask.FromResult(result);
     }
 }
 
 internal sealed class UploadDocumentCommandValidator
     : IMessageValidator<UploadDocumentCommand>
 {
-    public ValueTask ValidateAsync(
+    public ValueTask<IReadOnlyList<ApplicationError>> ValidateAsync(
         UploadDocumentCommand message,
         CancellationToken cancellationToken)
     {
-        PrimitiveValidation.NotBlank(message.FileName, "File name");
-        PrimitiveValidation.NotBlank(message.ContentType, "Content type");
-        PrimitiveValidation.NotBlank(message.CorrelationId, "CorrelationId");
+        var errors = new List<ApplicationError>();
+        PrimitiveValidation.NotBlank(
+            message.FileName,
+            errors,
+            "request.file_name_required",
+            "File name cannot be empty.",
+            "fileName");
+        PrimitiveValidation.NotBlank(
+            message.ContentType,
+            errors,
+            "request.content_type_required",
+            "Content type cannot be empty.",
+            "contentType");
+        PrimitiveValidation.NotBlank(
+            message.CorrelationId,
+            errors,
+            "request.correlation_id_required",
+            "CorrelationId cannot be empty.",
+            "correlationId");
 
         if (message.SizeBytes <= 0)
-            throw new RequestValidationException("File size must be greater than zero.");
-
-        if (message.SizeBytes > PrimitiveValidation.MaximumUploadSizeBytes)
-            throw new RequestValidationException("File size exceeds the maximum allowed size.");
+        {
+            errors.Add(ApplicationErrors.InvalidRequest(
+                "request.file_size_invalid",
+                "File size must be greater than zero.",
+                "sizeBytes"));
+        }
+        else if (message.SizeBytes > PrimitiveValidation.MaximumUploadSizeBytes)
+        {
+            errors.Add(ApplicationErrors.InvalidRequest(
+                "request.file_size_invalid",
+                "File size exceeds the maximum allowed size.",
+                "sizeBytes"));
+        }
 
         if (message.Content is null)
-            throw new RequestValidationException("Content stream cannot be null.");
+        {
+            errors.Add(ApplicationErrors.InvalidRequest(
+                "request.content_required",
+                "Content stream cannot be null.",
+                "content"));
+        }
 
-        return PrimitiveValidation.Completed(cancellationToken);
+        return PrimitiveValidation.Completed(errors, cancellationToken);
     }
 }
 
 internal sealed class DeleteDocumentCommandValidator
     : IMessageValidator<DeleteDocumentCommand>
 {
-    public ValueTask ValidateAsync(
+    public ValueTask<IReadOnlyList<ApplicationError>> ValidateAsync(
         DeleteDocumentCommand message,
         CancellationToken cancellationToken)
     {
-        PrimitiveValidation.NotEmpty(message.DocumentId, "DocumentId");
-        return PrimitiveValidation.Completed(cancellationToken);
+        var errors = new List<ApplicationError>();
+        PrimitiveValidation.NotEmpty(
+            message.DocumentId,
+            errors,
+            "request.document_id_required",
+            "DocumentId cannot be empty.",
+            "documentId");
+        return PrimitiveValidation.Completed(errors, cancellationToken);
     }
 }
 
 internal sealed class ReprocessDocumentCommandValidator
     : IMessageValidator<ReprocessDocumentCommand>
 {
-    public ValueTask ValidateAsync(
+    public ValueTask<IReadOnlyList<ApplicationError>> ValidateAsync(
         ReprocessDocumentCommand message,
         CancellationToken cancellationToken)
     {
-        PrimitiveValidation.NotEmpty(message.DocumentId, "DocumentId");
-        PrimitiveValidation.NotBlank(message.CorrelationId, "CorrelationId");
+        var errors = new List<ApplicationError>();
+        PrimitiveValidation.NotEmpty(
+            message.DocumentId,
+            errors,
+            "request.document_id_required",
+            "DocumentId cannot be empty.",
+            "documentId");
+        PrimitiveValidation.NotBlank(
+            message.CorrelationId,
+            errors,
+            "request.correlation_id_required",
+            "CorrelationId cannot be empty.",
+            "correlationId");
 
         if (!message.ForcePreprocess
             && !message.ForceChunk
             && !message.ForceIntelligence
             && !message.ForceEmbeddings)
         {
-            throw new RequestValidationException(
-                "At least one reprocessing stage must be selected.");
+            errors.Add(ApplicationErrors.InvalidRequest(
+                "request.reprocess_stage_required",
+                "At least one reprocessing stage must be selected.",
+                "stages"));
         }
 
-        return PrimitiveValidation.Completed(cancellationToken);
+        return PrimitiveValidation.Completed(errors, cancellationToken);
     }
 }
 
 internal sealed class ListDocumentsQueryValidator
     : IMessageValidator<ListDocumentsQuery>
 {
-    public ValueTask ValidateAsync(
+    public ValueTask<IReadOnlyList<ApplicationError>> ValidateAsync(
         ListDocumentsQuery message,
         CancellationToken cancellationToken)
     {
-        PrimitiveValidation.Pagination(message.PageNumber, message.PageSize);
-        return PrimitiveValidation.Completed(cancellationToken);
+        var errors = new List<ApplicationError>();
+        PrimitiveValidation.Pagination(message.PageNumber, message.PageSize, errors);
+        return PrimitiveValidation.Completed(errors, cancellationToken);
     }
 }
 
 internal sealed class GetDocumentDetailQueryValidator
     : IMessageValidator<GetDocumentDetailQuery>
 {
-    public ValueTask ValidateAsync(
+    public ValueTask<IReadOnlyList<ApplicationError>> ValidateAsync(
         GetDocumentDetailQuery message,
+        CancellationToken cancellationToken) =>
+        ValidateDocumentId(message.DocumentId, cancellationToken);
+
+    private static ValueTask<IReadOnlyList<ApplicationError>> ValidateDocumentId(
+        Guid documentId,
         CancellationToken cancellationToken)
     {
-        PrimitiveValidation.NotEmpty(message.DocumentId, "DocumentId");
-        return PrimitiveValidation.Completed(cancellationToken);
+        var errors = new List<ApplicationError>();
+        PrimitiveValidation.NotEmpty(
+            documentId,
+            errors,
+            "request.document_id_required",
+            "DocumentId cannot be empty.",
+            "documentId");
+        return PrimitiveValidation.Completed(errors, cancellationToken);
     }
 }
 
 internal sealed class GetDocumentStatusQueryValidator
     : IMessageValidator<GetDocumentStatusQuery>
 {
-    public ValueTask ValidateAsync(
+    public ValueTask<IReadOnlyList<ApplicationError>> ValidateAsync(
         GetDocumentStatusQuery message,
         CancellationToken cancellationToken)
     {
-        PrimitiveValidation.NotEmpty(message.DocumentId, "DocumentId");
-        return PrimitiveValidation.Completed(cancellationToken);
+        var errors = new List<ApplicationError>();
+        PrimitiveValidation.NotEmpty(
+            message.DocumentId,
+            errors,
+            "request.document_id_required",
+            "DocumentId cannot be empty.",
+            "documentId");
+        return PrimitiveValidation.Completed(errors, cancellationToken);
+    }
+}
+
+internal abstract class DocumentVersionMessageValidator
+{
+    protected static ValueTask<IReadOnlyList<ApplicationError>> Validate(
+        Guid documentId,
+        Guid versionId,
+        CancellationToken cancellationToken)
+    {
+        var errors = new List<ApplicationError>();
+        PrimitiveValidation.NotEmpty(
+            documentId,
+            errors,
+            "request.document_id_required",
+            "DocumentId cannot be empty.",
+            "documentId");
+        PrimitiveValidation.NotEmpty(
+            versionId,
+            errors,
+            "request.version_id_required",
+            "VersionId cannot be empty.",
+            "versionId");
+        return PrimitiveValidation.Completed(errors, cancellationToken);
     }
 }
 
 internal sealed class GetMarkdownArtifactQueryValidator
-    : IMessageValidator<GetMarkdownArtifactQuery>
+    : DocumentVersionMessageValidator, IMessageValidator<GetMarkdownArtifactQuery>
 {
-    public ValueTask ValidateAsync(
+    public ValueTask<IReadOnlyList<ApplicationError>> ValidateAsync(
         GetMarkdownArtifactQuery message,
-        CancellationToken cancellationToken)
-    {
-        PrimitiveValidation.NotEmpty(message.DocumentId, "DocumentId");
-        PrimitiveValidation.NotEmpty(message.VersionId, "VersionId");
-        return PrimitiveValidation.Completed(cancellationToken);
-    }
+        CancellationToken cancellationToken) =>
+        Validate(message.DocumentId, message.VersionId, cancellationToken);
 }
 
 internal sealed class GetJsonArtifactQueryValidator
-    : IMessageValidator<GetJsonArtifactQuery>
+    : DocumentVersionMessageValidator, IMessageValidator<GetJsonArtifactQuery>
 {
-    public ValueTask ValidateAsync(
+    public ValueTask<IReadOnlyList<ApplicationError>> ValidateAsync(
         GetJsonArtifactQuery message,
-        CancellationToken cancellationToken)
-    {
-        PrimitiveValidation.NotEmpty(message.DocumentId, "DocumentId");
-        PrimitiveValidation.NotEmpty(message.VersionId, "VersionId");
-        return PrimitiveValidation.Completed(cancellationToken);
-    }
+        CancellationToken cancellationToken) =>
+        Validate(message.DocumentId, message.VersionId, cancellationToken);
 }
 
 internal sealed class ListDocumentChunksQueryValidator
-    : IMessageValidator<ListDocumentChunksQuery>
+    : DocumentVersionMessageValidator, IMessageValidator<ListDocumentChunksQuery>
 {
-    public ValueTask ValidateAsync(
+    public ValueTask<IReadOnlyList<ApplicationError>> ValidateAsync(
         ListDocumentChunksQuery message,
         CancellationToken cancellationToken)
     {
-        PrimitiveValidation.NotEmpty(message.DocumentId, "DocumentId");
-        PrimitiveValidation.NotEmpty(message.VersionId, "VersionId");
-        PrimitiveValidation.Pagination(message.PageNumber, message.PageSize);
+        var errors = new List<ApplicationError>();
+        PrimitiveValidation.NotEmpty(
+            message.DocumentId,
+            errors,
+            "request.document_id_required",
+            "DocumentId cannot be empty.",
+            "documentId");
+        PrimitiveValidation.NotEmpty(
+            message.VersionId,
+            errors,
+            "request.version_id_required",
+            "VersionId cannot be empty.",
+            "versionId");
+        PrimitiveValidation.Pagination(message.PageNumber, message.PageSize, errors);
 
         if (message.PageNumberFilter <= 0)
         {
-            throw new RequestValidationException(
-                "Page number filter must be greater than zero.");
+            errors.Add(ApplicationErrors.InvalidRequest(
+                "request.page_number_filter_invalid",
+                "Page number filter must be greater than zero.",
+                "pageNumberFilter"));
         }
 
-        return PrimitiveValidation.Completed(cancellationToken);
+        return PrimitiveValidation.Completed(errors, cancellationToken);
     }
 }
 
 internal sealed class GetDocumentChunkQueryValidator
-    : IMessageValidator<GetDocumentChunkQuery>
+    : DocumentVersionMessageValidator, IMessageValidator<GetDocumentChunkQuery>
 {
-    public ValueTask ValidateAsync(
+    public ValueTask<IReadOnlyList<ApplicationError>> ValidateAsync(
         GetDocumentChunkQuery message,
         CancellationToken cancellationToken)
     {
-        PrimitiveValidation.NotEmpty(message.DocumentId, "DocumentId");
-        PrimitiveValidation.NotEmpty(message.VersionId, "VersionId");
-        PrimitiveValidation.NotEmpty(message.ChunkId, "ChunkId");
-        return PrimitiveValidation.Completed(cancellationToken);
+        var errors = new List<ApplicationError>();
+        PrimitiveValidation.NotEmpty(
+            message.DocumentId,
+            errors,
+            "request.document_id_required",
+            "DocumentId cannot be empty.",
+            "documentId");
+        PrimitiveValidation.NotEmpty(
+            message.VersionId,
+            errors,
+            "request.version_id_required",
+            "VersionId cannot be empty.",
+            "versionId");
+        PrimitiveValidation.NotEmpty(
+            message.ChunkId,
+            errors,
+            "request.chunk_id_required",
+            "ChunkId cannot be empty.",
+            "chunkId");
+        return PrimitiveValidation.Completed(errors, cancellationToken);
     }
 }
 
 internal sealed class GetDocumentIntelligenceQueryValidator
-    : IMessageValidator<GetDocumentIntelligenceQuery>
+    : DocumentVersionMessageValidator, IMessageValidator<GetDocumentIntelligenceQuery>
 {
-    public ValueTask ValidateAsync(
+    public ValueTask<IReadOnlyList<ApplicationError>> ValidateAsync(
         GetDocumentIntelligenceQuery message,
-        CancellationToken cancellationToken)
-    {
-        PrimitiveValidation.NotEmpty(message.DocumentId, "DocumentId");
-        PrimitiveValidation.NotEmpty(message.VersionId, "VersionId");
-        return PrimitiveValidation.Completed(cancellationToken);
-    }
+        CancellationToken cancellationToken) =>
+        Validate(message.DocumentId, message.VersionId, cancellationToken);
 }
 
 internal sealed class AskQuestionQueryValidator
@@ -249,97 +391,139 @@ internal sealed class AskQuestionQueryValidator
         _options = options.Value;
     }
 
-    public ValueTask ValidateAsync(
+    public ValueTask<IReadOnlyList<ApplicationError>> ValidateAsync(
         AskQuestionQuery message,
         CancellationToken cancellationToken)
     {
-        PrimitiveValidation.NotBlank(message.Question, "Question");
-        PrimitiveValidation.NotBlank(message.Model, "Model");
-        PrimitiveValidation.NotBlank(message.CorrelationId, "CorrelationId");
+        var errors = new List<ApplicationError>();
+        PrimitiveValidation.NotBlank(
+            message.Question,
+            errors,
+            "request.question_required",
+            "Question cannot be empty.",
+            "question");
+        PrimitiveValidation.NotBlank(
+            message.Model,
+            errors,
+            "request.model_required",
+            "Model cannot be empty.",
+            "model");
+        PrimitiveValidation.NotBlank(
+            message.CorrelationId,
+            errors,
+            "request.correlation_id_required",
+            "CorrelationId cannot be empty.",
+            "correlationId");
 
         if (message.TopK <= 0)
-            throw new RequestValidationException("TopK must be greater than zero.");
+        {
+            errors.Add(ApplicationErrors.InvalidRequest(
+                "request.top_k_invalid",
+                "TopK must be greater than zero.",
+                "topK"));
+        }
 
         if (message.FilterDocumentIds is not null)
         {
             if (message.FilterDocumentIds.Any(id => id == Guid.Empty))
-                throw new RequestValidationException("Document IDs must be non-empty.");
+            {
+                errors.Add(ApplicationErrors.InvalidRequest(
+                    "request.document_filter_invalid",
+                    "Document IDs must be non-empty.",
+                    "documentIds"));
+            }
 
             if (message.FilterDocumentIds.Distinct().Count() > _options.MaxDocumentFilterIds)
             {
-                throw new RequestValidationException(
-                    $"Document filter cannot contain more than {_options.MaxDocumentFilterIds} IDs.");
+                errors.Add(ApplicationErrors.InvalidRequest(
+                    "request.document_filter_invalid",
+                    $"Document filter cannot contain more than {_options.MaxDocumentFilterIds} IDs.",
+                    "documentIds"));
             }
         }
 
-        return PrimitiveValidation.Completed(cancellationToken);
+        return PrimitiveValidation.Completed(errors, cancellationToken);
+    }
+}
+
+internal abstract class WorkerMessageValidator
+{
+    protected static ValueTask<IReadOnlyList<ApplicationError>> Validate(
+        Guid tenantId,
+        Guid documentId,
+        Guid versionId,
+        Guid processingRunId,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        var errors = new List<ApplicationError>();
+        PrimitiveValidation.WorkerMessage(
+            tenantId,
+            documentId,
+            versionId,
+            processingRunId,
+            correlationId,
+            errors);
+        return PrimitiveValidation.Completed(errors, cancellationToken);
     }
 }
 
 internal sealed class PreprocessDocumentCommandValidator
-    : IMessageValidator<PreprocessDocumentCommand>
+    : WorkerMessageValidator, IMessageValidator<PreprocessDocumentCommand>
 {
-    public ValueTask ValidateAsync(
+    public ValueTask<IReadOnlyList<ApplicationError>> ValidateAsync(
         PreprocessDocumentCommand message,
-        CancellationToken cancellationToken)
-    {
-        PrimitiveValidation.WorkerMessage(
+        CancellationToken cancellationToken) =>
+        Validate(
             message.TenantId,
             message.DocumentId,
             message.VersionId,
             message.ProcessingRunId,
-            message.CorrelationId);
-        return PrimitiveValidation.Completed(cancellationToken);
-    }
+            message.CorrelationId,
+            cancellationToken);
 }
 
 internal sealed class ChunkDocumentCommandValidator
-    : IMessageValidator<ChunkDocumentCommand>
+    : WorkerMessageValidator, IMessageValidator<ChunkDocumentCommand>
 {
-    public ValueTask ValidateAsync(
+    public ValueTask<IReadOnlyList<ApplicationError>> ValidateAsync(
         ChunkDocumentCommand message,
-        CancellationToken cancellationToken)
-    {
-        PrimitiveValidation.WorkerMessage(
+        CancellationToken cancellationToken) =>
+        Validate(
             message.TenantId,
             message.DocumentId,
             message.VersionId,
             message.ProcessingRunId,
-            message.CorrelationId);
-        return PrimitiveValidation.Completed(cancellationToken);
-    }
+            message.CorrelationId,
+            cancellationToken);
 }
 
 internal sealed class GenerateIntelligenceCommandValidator
-    : IMessageValidator<GenerateIntelligenceCommand>
+    : WorkerMessageValidator, IMessageValidator<GenerateIntelligenceCommand>
 {
-    public ValueTask ValidateAsync(
+    public ValueTask<IReadOnlyList<ApplicationError>> ValidateAsync(
         GenerateIntelligenceCommand message,
-        CancellationToken cancellationToken)
-    {
-        PrimitiveValidation.WorkerMessage(
+        CancellationToken cancellationToken) =>
+        Validate(
             message.TenantId,
             message.DocumentId,
             message.VersionId,
             message.ProcessingRunId,
-            message.CorrelationId);
-        return PrimitiveValidation.Completed(cancellationToken);
-    }
+            message.CorrelationId,
+            cancellationToken);
 }
 
 internal sealed class GenerateEmbeddingsCommandValidator
-    : IMessageValidator<GenerateEmbeddingsCommand>
+    : WorkerMessageValidator, IMessageValidator<GenerateEmbeddingsCommand>
 {
-    public ValueTask ValidateAsync(
+    public ValueTask<IReadOnlyList<ApplicationError>> ValidateAsync(
         GenerateEmbeddingsCommand message,
-        CancellationToken cancellationToken)
-    {
-        PrimitiveValidation.WorkerMessage(
+        CancellationToken cancellationToken) =>
+        Validate(
             message.TenantId,
             message.DocumentId,
             message.VersionId,
             message.ProcessingRunId,
-            message.CorrelationId);
-        return PrimitiveValidation.Completed(cancellationToken);
-    }
+            message.CorrelationId,
+            cancellationToken);
 }

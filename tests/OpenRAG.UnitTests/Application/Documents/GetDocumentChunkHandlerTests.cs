@@ -20,7 +20,7 @@ public sealed class GetDocumentChunkHandlerTests
         var fakes = new Fakes(chunk, hasEmbedding: true);
         var handler = new GetDocumentChunkHandler(fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.DocRepo, fakes.Tenant);
 
-        var response = await handler.Handle(new GetDocumentChunkQuery(DocId, VerId, ChunkId));
+        var response = (await handler.Handle(new GetDocumentChunkQuery(DocId, VerId, ChunkId))).Value;
 
         Assert.Equal(ChunkId, response.ChunkId);
         Assert.Equal("content", response.Content);
@@ -35,7 +35,7 @@ public sealed class GetDocumentChunkHandlerTests
         var fakes = new Fakes(chunk, hasEmbedding: false);
         var handler = new GetDocumentChunkHandler(fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.DocRepo, fakes.Tenant);
 
-        var response = await handler.Handle(new GetDocumentChunkQuery(DocId, VerId, ChunkId));
+        var response = (await handler.Handle(new GetDocumentChunkQuery(DocId, VerId, ChunkId))).Value;
 
         Assert.False(response.HasEmbedding);
         Assert.Null(response.EmbeddingProvider);
@@ -47,9 +47,11 @@ public sealed class GetDocumentChunkHandlerTests
         var fakes = new Fakes(null, false);
         var handler = new GetDocumentChunkHandler(fakes.ChunkRepo, fakes.EmbeddingRepo, fakes.DocRepo, fakes.Tenant);
 
-        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
-            handler.Handle(new GetDocumentChunkQuery(DocId, VerId, ChunkId)).AsTask());
-        Assert.Contains("not found", ex.Message);
+        var result = await handler.Handle(new GetDocumentChunkQuery(DocId, VerId, ChunkId));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("resource.not_found", result.PrimaryError.Code);
+        Assert.False(fakes.EmbeddingRepo.WasRead);
     }
 
     private sealed class Fakes
@@ -93,13 +95,19 @@ public sealed class GetDocumentChunkHandlerTests
         private readonly bool _hasEmbedding;
         public FakeEmbeddingRepo(bool hasEmbedding) => _hasEmbedding = hasEmbedding;
 
+        public bool WasRead { get; private set; }
+
         public Task AddRangeAsync(IReadOnlyCollection<DocumentEmbedding> e, CancellationToken ct = default) => Task.CompletedTask;
         public Task<IReadOnlyList<DocumentEmbedding>> GetByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<DocumentEmbedding>>(Array.Empty<DocumentEmbedding>());
         public Task<bool> AnyForVersionAsync(Guid tid, Guid did, Guid vid, string model, CancellationToken ct = default) => Task.FromResult(_hasEmbedding);
         public Task<int> CountByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) => Task.FromResult(_hasEmbedding ? 1 : 0);
         public Task<DocumentEmbeddingMetadata?> GetMetadataByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
-            => Task.FromResult<DocumentEmbeddingMetadata?>(_hasEmbedding ? new DocumentEmbeddingMetadata("Mock", "mock", 8, "v1", 1) : null);
+        {
+            WasRead = true;
+            return Task.FromResult<DocumentEmbeddingMetadata?>(
+                _hasEmbedding ? new DocumentEmbeddingMetadata("Mock", "mock", 8, "v1", 1) : null);
+        }
         public Task DeleteByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) => Task.CompletedTask;
     }
 

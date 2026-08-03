@@ -28,9 +28,9 @@ The Worker wrapping order is telemetry, structured logging scope, explicit Worke
 
 The API context behavior uses `ICurrentUser` and `ICurrentTenant`. It is defense in depth behind endpoint authentication and authorization policies and does not inspect claims. It normalizes invalid production context accessors to `UnauthorizedAccessException` and creates the trusted user/tenant logging scope only after validation. The generic logging behavior adds message type, category, and correlation only; it does not resolve security context. The Worker behavior uses only the immutable tenant carried by its message, never an HTTP or ambient tenant context, and owns the Worker tenant scope.
 
-Use small `IMessageValidator<TMessage>` implementations for dependency-free primitive shape rules. Validators execute in registration order, stop at the first failure, propagate cancellation, and throw the existing `RequestValidationException`. They do not query resource state.
+Use small `IMessageValidator<TMessage>` implementations for dependency-free primitive shape rules. Validators execute in registration order, return defensively copied structured errors, propagate cancellation, and do not query resource state. ADR 0005 later split host semantics: the API aggregates validation errors into a failed Result, while Worker validation throws `RequestValidationException` so CAP retry and acknowledgement behavior cannot change.
 
-Use `ActivitySource` name `OpenRAG.Application.Mediator`. Activities contain only message name/category, outcome, correlation ID, duration, and an explicit Worker tenant when present. Message bodies and sensitive fields are never serialized into spans or scopes.
+Use `ActivitySource` name `OpenRAG.Application.Mediator`. Activities contain only message name/category, outcome, correlation ID, duration, and stable application error code/type for expected rejections. Message bodies, tenant ownership details, and sensitive fields are never serialized into spans or scopes.
 
 Retain scoped Mediator lifetime because handlers and behaviors consume scoped context and persistence services.
 
@@ -50,7 +50,7 @@ caching or rate limiting
 HTTP exception conversion or Problem Details
 ```
 
-Resource authorization remains explicit in each use case because it depends on the requested resource, nested identity, operation, and fail-closed behavior. Generic transaction behavior was rejected because transaction and CAP outbox boundaries differ by workflow. HTTP exception mapping remains at the API boundary because Application and Worker must not acquire ASP.NET Core semantics.
+Resource authorization remains explicit in each use case because it depends on the requested resource, nested identity, operation, and fail-closed behavior. Generic transaction behavior was rejected because transaction and CAP outbox boundaries differ by workflow. HTTP exception and Result mapping remain at the API boundary because Application and Worker must not acquire ASP.NET Core semantics.
 
 ## Consequences
 
@@ -58,7 +58,7 @@ Positive:
 
 ```text
 Every request has an explicit category and execution-context contract.
-Primitive validation and cancellation behavior are reusable and deterministic.
+Primitive validation and cancellation behavior are reusable and deterministic while API and Worker failure semantics remain distinct.
 API and Worker context rules remain separate.
 Safe application timing and structured scopes are consistent.
 Authorization and persistence boundaries remain reviewable in handlers.

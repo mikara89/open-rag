@@ -23,8 +23,8 @@ public sealed class UploadDocumentHandlerTests
         var handler = CreateHandler();
         var command = new UploadDocumentCommand("", "application/pdf", 1024, Stream.Null, "test-1");
 
-        var ex = await Assert.ThrowsAsync<RequestValidationException>(() => handler.Handle(command).AsTask());
-        Assert.Contains("File name", ex.Message);
+        var result = await handler.Handle(command);
+        Assert.Equal("request.file_name_required", result.PrimaryError.Code);
     }
 
     [Fact]
@@ -33,8 +33,8 @@ public sealed class UploadDocumentHandlerTests
         var handler = CreateHandler();
         var command = new UploadDocumentCommand("   ", "application/pdf", 1024, Stream.Null, "test-2");
 
-        var ex = await Assert.ThrowsAsync<RequestValidationException>(() => handler.Handle(command).AsTask());
-        Assert.Contains("File name", ex.Message);
+        var result = await handler.Handle(command);
+        Assert.Equal("request.file_name_required", result.PrimaryError.Code);
     }
 
     [Fact]
@@ -43,8 +43,8 @@ public sealed class UploadDocumentHandlerTests
         var handler = CreateHandler();
         var command = new UploadDocumentCommand("report.pdf", "", 1024, Stream.Null, "test-3");
 
-        var ex = await Assert.ThrowsAsync<RequestValidationException>(() => handler.Handle(command).AsTask());
-        Assert.Contains("Content type", ex.Message);
+        var result = await handler.Handle(command);
+        Assert.Equal("request.content_type_required", result.PrimaryError.Code);
     }
 
     [Fact]
@@ -53,8 +53,8 @@ public sealed class UploadDocumentHandlerTests
         var handler = CreateHandler();
         var command = new UploadDocumentCommand("report.pdf", "application/pdf", 0, Stream.Null, "test-4");
 
-        var ex = await Assert.ThrowsAsync<RequestValidationException>(() => handler.Handle(command).AsTask());
-        Assert.Contains("size", ex.Message);
+        var result = await handler.Handle(command);
+        Assert.Equal("request.file_size_invalid", result.PrimaryError.Code);
     }
 
     [Fact]
@@ -63,8 +63,8 @@ public sealed class UploadDocumentHandlerTests
         var handler = CreateHandler();
         var command = new UploadDocumentCommand("report.pdf", "application/pdf", -1, Stream.Null, "test-5");
 
-        var ex = await Assert.ThrowsAsync<RequestValidationException>(() => handler.Handle(command).AsTask());
-        Assert.Contains("size", ex.Message);
+        var result = await handler.Handle(command);
+        Assert.Equal("request.file_size_invalid", result.PrimaryError.Code);
     }
 
     [Fact]
@@ -73,8 +73,8 @@ public sealed class UploadDocumentHandlerTests
         var handler = CreateHandler();
         var command = new UploadDocumentCommand("report.pdf", "application/pdf", 1024, null!, "test-6");
 
-        var ex = await Assert.ThrowsAsync<RequestValidationException>(() => handler.Handle(command).AsTask());
-        Assert.Contains("Content stream", ex.Message);
+        var result = await handler.Handle(command);
+        Assert.Equal("request.content_required", result.PrimaryError.Code);
     }
 
     [Fact]
@@ -84,8 +84,8 @@ public sealed class UploadDocumentHandlerTests
         var command = new UploadDocumentCommand(
             "large.pdf", "application/pdf", 200 * 1024 * 1024, Stream.Null, "test-7");
 
-        var ex = await Assert.ThrowsAsync<RequestValidationException>(() => handler.Handle(command).AsTask());
-        Assert.Contains("maximum", ex.Message);
+        var result = await handler.Handle(command);
+        Assert.Equal("request.file_size_invalid", result.PrimaryError.Code);
     }
 
     [Fact]
@@ -132,7 +132,7 @@ public sealed class UploadDocumentHandlerTests
         var command = new UploadDocumentCommand(
             "report.pdf", "application/pdf", content.Length, content, "corr-123");
 
-        var response = await handler.Handle(command);
+        var response = (await handler.Handle(command)).Value;
 
         Assert.NotEqual(Guid.Empty, response.DocumentId);
         Assert.NotEqual(Guid.Empty, response.VersionId);

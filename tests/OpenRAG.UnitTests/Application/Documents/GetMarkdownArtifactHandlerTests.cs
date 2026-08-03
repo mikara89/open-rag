@@ -23,7 +23,7 @@ public sealed class GetMarkdownArtifactHandlerTests
         var fakes = new Fakes(version, MarkdownKey, "# Hello Markdown");
         var handler = CreateHandler(fakes);
 
-        var response = await handler.Handle(new GetMarkdownArtifactQuery(DocId, VerId));
+        var response = (await handler.Handle(new GetMarkdownArtifactQuery(DocId, VerId))).Value;
 
         Assert.Equal("# Hello Markdown", response.Content);
         Assert.Equal("text/markdown", response.ContentType);
@@ -35,9 +35,11 @@ public sealed class GetMarkdownArtifactHandlerTests
         var fakes = new Fakes(null, null, null);
         var handler = CreateHandler(fakes);
 
-        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
-            handler.Handle(new GetMarkdownArtifactQuery(DocId, VerId)).AsTask());
-        Assert.Contains("not found", ex.Message);
+        var result = await handler.Handle(new GetMarkdownArtifactQuery(DocId, VerId));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("resource.not_found", result.PrimaryError.Code);
+        Assert.False(fakes.FileStorage.ReadCalled);
     }
 
     [Fact]
@@ -47,9 +49,11 @@ public sealed class GetMarkdownArtifactHandlerTests
         var fakes = new Fakes(version, null, null);
         var handler = CreateHandler(fakes);
 
-        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
-            handler.Handle(new GetMarkdownArtifactQuery(DocId, VerId)).AsTask());
-        Assert.Equal(ResourceNotFoundException.PublicMessage, ex.Message);
+        var result = await handler.Handle(new GetMarkdownArtifactQuery(DocId, VerId));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("resource.not_found", result.PrimaryError.Code);
+        Assert.False(fakes.FileStorage.ReadCalled);
     }
 
     [Fact]

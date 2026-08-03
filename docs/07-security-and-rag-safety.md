@@ -6,7 +6,7 @@ Every document, chunk, vector, extraction result, and processing event must be t
 
 The tenant is the implemented authorization boundary. Any authenticated user with one valid trusted tenant claim can operate on that tenant's resources. `CreatedByUserId` is audit metadata, not a per-user ownership rule; memberships, sharing, and document ACLs remain future work.
 
-P0.4 enforces explicit tenant predicates in repositories, complete nested-resource identity, canonical object-key ownership, composite database relationships, and parameterized pgvector predicates. Optional RAG document IDs are authorized in one tenant-scoped bulk lookup before embedding. Retrieved chunks are revalidated before prompt construction; a foreign, out-of-filter, empty, or duplicate identity causes a generic 500 and the chat provider is not called. Missing and foreign resources return the same generic 404. See [authorization and retrieval isolation](17-authorization-and-isolation.md).
+P0.4 enforces explicit tenant predicates in repositories, complete nested-resource identity, canonical object-key ownership, composite database relationships, and parameterized pgvector predicates. Optional RAG document IDs are authorized in one tenant-scoped bulk lookup before embedding. Retrieved chunks are revalidated before prompt construction; a foreign, out-of-filter, empty, or duplicate identity causes a generic 500 and the chat provider is not called. P0.4.2 represents missing and foreign resources with the same `resource.not_found` Result and generic 404 Problem Details. See [authorization and retrieval isolation](17-authorization-and-isolation.md) and the [hybrid Result model](18-hybrid-result-error-model.md).
 
 Tenant isolation and authorization must be enforced before retrieval, before LLM calls, and before object storage access.
 
@@ -16,7 +16,7 @@ JWT Bearer authentication is implemented for every `/api` endpoint. The authenti
 
 Trusted tenant resolution is implemented: the API uses `HttpContextCurrentTenant` to read only the validated JWT claim (`tenant_id` by default), and Workers receive the same tenant explicitly in CAP events and processing commands. Headers, query strings, routes, and bodies cannot select the tenant, and no development fallback exists. See [trusted tenant resolution](16-trusted-tenant-resolution.md).
 
-Resource authorization is separate and remains incomplete. P0.4 must finish document-level authorization and audit every repository, object-storage, and vector boundary; P0.5 must add adversarial cross-tenant integration coverage. The current system is not yet production-safe for multitenant use.
+Code-level resource authorization and isolation are complete through P0.4.2. P0.5 must still prove those controls with adversarial cross-tenant tests against disposable live PostgreSQL/pgvector, object storage, API, and Worker infrastructure. The current system is not yet production-safe for multitenant use.
 
 ## Tenant isolation
 

@@ -2,10 +2,12 @@ using Mediator;
 using OpenRAG.Application.Abstractions.Persistence;
 using OpenRAG.Application.Abstractions.Security;
 using OpenRAG.Application.Common;
+using OpenRAG.Application.Common.Results;
 
 namespace OpenRAG.Application.Documents.GetDocumentChunk;
 
-public sealed class GetDocumentChunkHandler : IRequestHandler<GetDocumentChunkQuery, GetDocumentChunkResponse>
+public sealed class GetDocumentChunkHandler
+    : IRequestHandler<GetDocumentChunkQuery, Result<GetDocumentChunkResponse>>
 {
     private readonly IDocumentChunkRepository _chunkRepository;
     private readonly IDocumentEmbeddingRepository _embeddingRepository;
@@ -24,25 +26,32 @@ public sealed class GetDocumentChunkHandler : IRequestHandler<GetDocumentChunkQu
         _currentTenant = currentTenant;
     }
 
-    public async ValueTask<GetDocumentChunkResponse> Handle(
+    public async ValueTask<Result<GetDocumentChunkResponse>> Handle(
         GetDocumentChunkQuery query,
         CancellationToken cancellationToken = default)
     {
-        var tenantId = _currentTenant.TenantId;
         if (query.DocumentId == Guid.Empty
             || query.VersionId == Guid.Empty
             || query.ChunkId == Guid.Empty)
         {
-            throw new RequestValidationException(
-                "Document, version, and chunk identifiers must be non-empty.");
+            var error = query.DocumentId == Guid.Empty
+                ? ApplicationErrors.InvalidRequest(
+                    "request.document_id_required", "DocumentId cannot be empty.", "documentId")
+                : query.VersionId == Guid.Empty
+                    ? ApplicationErrors.InvalidRequest(
+                        "request.version_id_required", "VersionId cannot be empty.", "versionId")
+                    : ApplicationErrors.InvalidRequest(
+                        "request.chunk_id_required", "ChunkId cannot be empty.", "chunkId");
+            return Result<GetDocumentChunkResponse>.Failure(error);
         }
 
+        var tenantId = _currentTenant.TenantId;
         // Validate document/version exist for tenant
         var version = await _documentRepository.GetVersionAsync(
             tenantId, query.DocumentId, query.VersionId, cancellationToken);
 
         if (version is null)
-            throw new ResourceNotFoundException();
+            return Result<GetDocumentChunkResponse>.Failure(ApplicationErrors.ResourceNotFound());
 
         IsolationGuard.Equal(version.TenantId, tenantId, nameof(version.TenantId));
         IsolationGuard.Equal(version.DocumentId, query.DocumentId, nameof(version.DocumentId));
@@ -52,7 +61,7 @@ public sealed class GetDocumentChunkHandler : IRequestHandler<GetDocumentChunkQu
             tenantId, query.DocumentId, query.VersionId, query.ChunkId, cancellationToken);
 
         if (chunk is null)
-            throw new ResourceNotFoundException();
+            return Result<GetDocumentChunkResponse>.Failure(ApplicationErrors.ResourceNotFound());
 
         IsolationGuard.Equal(chunk.TenantId, tenantId, nameof(chunk.TenantId));
         IsolationGuard.Equal(chunk.DocumentId, query.DocumentId, nameof(chunk.DocumentId));
@@ -63,7 +72,7 @@ public sealed class GetDocumentChunkHandler : IRequestHandler<GetDocumentChunkQu
         var embeddingMeta = await _embeddingRepository.GetMetadataByVersionAsync(
             tenantId, query.DocumentId, query.VersionId, cancellationToken);
 
-        return new GetDocumentChunkResponse(
+        return Result<GetDocumentChunkResponse>.Success(new GetDocumentChunkResponse(
             ChunkId: chunk.Id,
             ChunkIndex: chunk.ChunkIndex,
             Content: chunk.Content,
@@ -75,6 +84,6 @@ public sealed class GetDocumentChunkHandler : IRequestHandler<GetDocumentChunkQu
             EmbeddingProvider: embeddingMeta?.Provider,
             EmbeddingModel: embeddingMeta?.Model,
             EmbeddingDimensions: embeddingMeta?.Dimensions,
-            HasEmbedding: embeddingMeta is not null);
+            HasEmbedding: embeddingMeta is not null));
     }
 }

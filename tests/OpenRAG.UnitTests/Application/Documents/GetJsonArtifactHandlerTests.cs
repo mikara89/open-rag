@@ -23,7 +23,7 @@ public sealed class GetJsonArtifactHandlerTests
         var fakes = new Fakes(version, JsonKey, "{\"pages\": []}");
         var handler = CreateHandler(fakes);
 
-        var response = await handler.Handle(new GetJsonArtifactQuery(DocId, VerId));
+        var response = (await handler.Handle(new GetJsonArtifactQuery(DocId, VerId))).Value;
 
         Assert.Equal("{\"pages\": []}", response.Content);
         Assert.Equal("application/json", response.ContentType);
@@ -36,9 +36,11 @@ public sealed class GetJsonArtifactHandlerTests
         var fakes = new Fakes(version, null, null);
         var handler = CreateHandler(fakes);
 
-        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
-            handler.Handle(new GetJsonArtifactQuery(DocId, VerId)).AsTask());
-        Assert.Equal(ResourceNotFoundException.PublicMessage, ex.Message);
+        var result = await handler.Handle(new GetJsonArtifactQuery(DocId, VerId));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("resource.not_found", result.PrimaryError.Code);
+        Assert.False(fakes.FileStorage.ReadCalled);
     }
 
     private static DocumentVersion CreateVersion(string? mdKey, string? jsonKey)
@@ -93,10 +95,13 @@ public sealed class GetJsonArtifactHandlerTests
         private readonly string? _storedContent;
         public FakeFileStorage(string? expectedKey, string? storedContent) { _expectedKey = expectedKey; _storedContent = storedContent; }
 
+        public bool ReadCalled { get; private set; }
+
         public Task<StoredObjectResult> SaveAsync(Stream c, string k, string ct, CancellationToken _ = default)
             => Task.FromResult(new StoredObjectResult("b", k, ct, 0, null, null));
         public Task<Stream> OpenReadAsync(string key, CancellationToken _ = default)
         {
+            ReadCalled = true;
             if (key != _expectedKey) throw new InvalidOperationException("Wrong key");
             var stream = new MemoryStream();
             var writer = new StreamWriter(stream);

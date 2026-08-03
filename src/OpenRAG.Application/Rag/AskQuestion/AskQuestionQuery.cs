@@ -1,3 +1,4 @@
+using OpenRAG.Application.Common.Results;
 using OpenRAG.Application.Pipeline;
 
 namespace OpenRAG.Application.Rag.AskQuestion;
@@ -8,6 +9,7 @@ public sealed record AskQuestionQuery(
     int? TopK,
     string Model,
     string CorrelationId
-) : IOpenRagQuery<AskQuestionResponse>,
+) : IOpenRagQuery<Result<AskQuestionResponse>>,
     IAuthenticatedApplicationMessage,
+    IResultApplicationMessage,
     ICorrelatedMessage;

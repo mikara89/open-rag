@@ -4,7 +4,7 @@
 
 The tenant is the current resource-authorization boundary. Any authenticated user with a valid trusted tenant claim may operate on resources belonging to that tenant. `CreatedByUserId` is audit metadata only; it is not a document-owner ACL.
 
-P0.4 is complete but does not add users, memberships, invitations, sharing, document ACLs, or per-user ownership restrictions. Provider diagnostics remains administrator-only. The later P0.4.1 Mediator improvement validates only primitive message shape and trusted execution context; every resource authorization and isolation check documented here remains explicit in its handler, repository, storage, vector, or RAG boundary. P0.5 remains responsible for live adversarial tests using disposable PostgreSQL/pgvector, object storage, API, and Worker infrastructure.
+P0.4 is complete but does not add users, memberships, invitations, sharing, document ACLs, or per-user ownership restrictions. Provider diagnostics remains administrator-only. P0.4.1 added narrow host pipelines, and P0.4.2 added Results for expected HTTP outcomes; every resource authorization and isolation check documented here remains explicit in its handler, repository, storage, vector, or RAG boundary. P0.5 remains responsible for live adversarial tests using disposable PostgreSQL/pgvector, object storage, API, and Worker infrastructure.
 
 ## Denial contract
 
@@ -18,7 +18,7 @@ P0.4 is complete but does not add users, memberships, invitations, sharing, docu
 | Valid request conflicts with resource state | 409 Problem Details |
 | Persisted/provider isolation invariant fails | Generic 500 Problem Details |
 
-Problem responses use stable `https://openrag.dev/problems/*` types and a trace ID. They do not expose tenant ownership, object keys, SQL, stack traces, document content, prompts, or vectors. Normal 404 responses are not logged as unexpected failures.
+Problem responses use stable `https://openrag.dev/problems/*` types, a trace ID, and safe application-error codes. Expected 400/404/409 responses originate from Result mapping rather than exception handling. They do not expose tenant ownership, object keys, SQL, stack traces, document content, prompts, or vectors. Normal 404 responses are telemetry `rejected` outcomes and are not logged as unexpected failures.
 
 ## Isolation inventory
 

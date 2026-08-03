@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using OpenRAG.Api.Security;
 using OpenRAG.Application;
 using OpenRAG.Application.Abstractions.Security;
+using OpenRAG.Application.Common.Results;
 using OpenRAG.Application.Documents.GetDocumentDetail;
 using OpenRAG.Application.Pipeline;
 using OpenRAG.Application.Pipeline.Behaviors;
@@ -33,14 +34,14 @@ public sealed class MediatorPipelineCompositionTests
         var sameScopeMediator = firstScope.ServiceProvider.GetRequiredService<IMediator>();
         var secondMediator = secondScope.ServiceProvider.GetRequiredService<IMediator>();
         var pipeline = firstScope.ServiceProvider
-            .GetServices<IPipelineBehavior<GetDocumentDetailQuery, GetDocumentDetailResponse>>()
+            .GetServices<IPipelineBehavior<GetDocumentDetailQuery, Result<GetDocumentDetailResponse>>>()
             .ToArray();
 
         Assert.Same(firstMediator, sameScopeMediator);
         Assert.NotSame(firstMediator, secondMediator);
         Assert.Contains(
             pipeline,
-            behavior => behavior is AuthenticatedContextBehavior<GetDocumentDetailQuery, GetDocumentDetailResponse>);
+            behavior => behavior is AuthenticatedContextBehavior<GetDocumentDetailQuery, Result<GetDocumentDetailResponse>>);
         Assert.DoesNotContain(
             pipeline,
             behavior => behavior.GetType().Name.StartsWith(
@@ -48,7 +49,7 @@ public sealed class MediatorPipelineCompositionTests
                 StringComparison.Ordinal));
         Assert.NotNull(
             firstScope.ServiceProvider
-                .GetRequiredService<IRequestHandler<GetDocumentDetailQuery, GetDocumentDetailResponse>>());
+                .GetRequiredService<IRequestHandler<GetDocumentDetailQuery, Result<GetDocumentDetailResponse>>>());
     }
 
     [Theory]
@@ -67,7 +68,7 @@ public sealed class MediatorPipelineCompositionTests
             HttpContext = CreateHttpContext(scenario)
         };
         var loggingLogger =
-            new ScopeCapturingLogger<LoggingScopeBehavior<GetDocumentDetailQuery, GetDocumentDetailResponse>>();
+            new ScopeCapturingLogger<LoggingScopeBehavior<GetDocumentDetailQuery, Result<GetDocumentDetailResponse>>>();
         var handler = new RecordingGetDocumentDetailHandler();
         var services = new ServiceCollection();
         services.AddLogging();
@@ -79,9 +80,9 @@ public sealed class MediatorPipelineCompositionTests
             Options.Create(new JwtAuthenticationOptions()));
         services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
         services.AddScoped<ICurrentTenant, HttpContextCurrentTenant>();
-        services.AddSingleton<ILogger<LoggingScopeBehavior<GetDocumentDetailQuery, GetDocumentDetailResponse>>>(
+        services.AddSingleton<ILogger<LoggingScopeBehavior<GetDocumentDetailQuery, Result<GetDocumentDetailResponse>>>>(
             loggingLogger);
-        services.AddScoped<IRequestHandler<GetDocumentDetailQuery, GetDocumentDetailResponse>>(
+        services.AddScoped<IRequestHandler<GetDocumentDetailQuery, Result<GetDocumentDetailResponse>>>(
             _ => handler);
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
@@ -108,6 +109,50 @@ public sealed class MediatorPipelineCompositionTests
         Assert.Equal(ActivityStatusCode.Error, activity.Status);
     }
 
+    [Fact]
+    public async Task Api_pipeline_authenticates_logs_and_rejects_validation_before_handler()
+    {
+        using var activityListener = new CapturingActivityListener();
+        var contextAccessor = new HttpContextAccessor
+        {
+            HttpContext = CreateHttpContext("valid")
+        };
+        var loggingLogger =
+            new ScopeCapturingLogger<LoggingScopeBehavior<GetDocumentDetailQuery, Result<GetDocumentDetailResponse>>>();
+        var handler = new RecordingGetDocumentDetailHandler();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddApplication();
+        services.AddMediator(options => options.ServiceLifetime = ServiceLifetime.Scoped);
+        services.AddOpenRagMediatorPipelines(OpenRagPipelineHost.Api);
+        services.AddSingleton<IHttpContextAccessor>(contextAccessor);
+        services.AddSingleton<IOptions<JwtAuthenticationOptions>>(
+            Options.Create(new JwtAuthenticationOptions()));
+        services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
+        services.AddScoped<ICurrentTenant, HttpContextCurrentTenant>();
+        services.AddSingleton<ILogger<LoggingScopeBehavior<GetDocumentDetailQuery, Result<GetDocumentDetailResponse>>>>(
+            loggingLogger);
+        services.AddScoped<IRequestHandler<GetDocumentDetailQuery, Result<GetDocumentDetailResponse>>>(
+            _ => handler);
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        var result = await scope.ServiceProvider.GetRequiredService<IMediator>().Send(
+            new GetDocumentDetailQuery(Guid.Empty),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("request.document_id_required", result.PrimaryError.Code);
+        Assert.Equal(0, handler.CallCount);
+        Assert.Single(loggingLogger.Scopes);
+        var activity = Assert.Single(
+            activityListener.StoppedActivities,
+            item => item.OperationName == nameof(GetDocumentDetailQuery));
+        Assert.Equal("rejected", activity.GetTagItem("openrag.message.outcome"));
+        Assert.Equal("validation", activity.GetTagItem("openrag.error.type"));
+        Assert.Equal("request.document_id_required", activity.GetTagItem("openrag.error.code"));
+    }
+
     private static DefaultHttpContext? CreateHttpContext(string scenario)
     {
         if (scenario == "no-http-context")
@@ -115,6 +160,7 @@ public sealed class MediatorPipelineCompositionTests
 
         var claims = scenario switch
         {
+            "valid" => ValidClaims(),
             "unauthenticated" => ValidClaims(),
             "missing-user" =>
             [
@@ -151,16 +197,16 @@ public sealed class MediatorPipelineCompositionTests
     ];
 
     private sealed class RecordingGetDocumentDetailHandler
-        : IRequestHandler<GetDocumentDetailQuery, GetDocumentDetailResponse>
+        : IRequestHandler<GetDocumentDetailQuery, Result<GetDocumentDetailResponse>>
     {
         public int CallCount { get; private set; }
 
-        public ValueTask<GetDocumentDetailResponse> Handle(
+        public ValueTask<Result<GetDocumentDetailResponse>> Handle(
             GetDocumentDetailQuery request,
             CancellationToken cancellationToken)
         {
             CallCount++;
-            return ValueTask.FromResult(
+            return ValueTask.FromResult(Result<GetDocumentDetailResponse>.Success(
                 new GetDocumentDetailResponse(
                     request.DocumentId,
                     "document.pdf",
@@ -168,7 +214,7 @@ public sealed class MediatorPipelineCompositionTests
                     DateTime.UnixEpoch,
                     DateTime.UnixEpoch,
                     null,
-                    null));
+                    null)));
         }
     }
 

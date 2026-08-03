@@ -1,4 +1,4 @@
-using OpenRAG.Application.Common;
+using OpenRAG.Application.Common.Results;
 using OpenRAG.Application.Pipeline;
 
 namespace OpenRAG.Application.Documents.UploadDocument;
@@ -9,6 +9,7 @@ public sealed record UploadDocumentCommand(
     long SizeBytes,
     Stream Content,
     string CorrelationId
-) : IOpenRagCommand<UploadDocumentResponse>,
+) : IOpenRagCommand<Result<UploadDocumentResponse>>,
     IAuthenticatedApplicationMessage,
+    IResultApplicationMessage,
     ICorrelatedMessage;

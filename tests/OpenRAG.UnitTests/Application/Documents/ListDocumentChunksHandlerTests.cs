@@ -19,21 +19,21 @@ public sealed class ListDocumentChunksHandlerTests
         var fakes = new Fakes(chunks, chunkCount: 2);
         var handler = new ListDocumentChunksHandler(fakes.ChunkRepo, fakes.DocRepo, fakes.Tenant);
 
-        var response = await handler.Handle(new ListDocumentChunksQuery(DocId, VerId));
+        var response = (await handler.Handle(new ListDocumentChunksQuery(DocId, VerId))).Value;
 
         Assert.Equal(2, response.TotalCount);
         Assert.Equal(2, response.Items.Count);
     }
 
     [Fact]
-    public async Task Caps_page_size_at_100()
+    public async Task Rejects_page_size_above_100()
     {
         var fakes = new Fakes(Array.Empty<DocumentChunk>(), 0);
         var handler = new ListDocumentChunksHandler(fakes.ChunkRepo, fakes.DocRepo, fakes.Tenant);
 
-        var response = await handler.Handle(new ListDocumentChunksQuery(DocId, VerId, 1, 200));
+        var result = await handler.Handle(new ListDocumentChunksQuery(DocId, VerId, 1, 200));
 
-        Assert.True(response.PageSize <= 100);
+        Assert.Equal("request.page_size_invalid", result.PrimaryError.Code);
     }
 
     [Fact]
@@ -42,9 +42,11 @@ public sealed class ListDocumentChunksHandlerTests
         var fakes = new Fakes(Array.Empty<DocumentChunk>(), 0, null, useVersion: false);
         var handler = new ListDocumentChunksHandler(fakes.ChunkRepo, fakes.DocRepo, fakes.Tenant);
 
-        var ex = await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
-            handler.Handle(new ListDocumentChunksQuery(DocId, VerId)).AsTask());
-        Assert.Contains("not found", ex.Message);
+        var result = await handler.Handle(new ListDocumentChunksQuery(DocId, VerId));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("resource.not_found", result.PrimaryError.Code);
+        Assert.False(fakes.ChunkRepo.ListCalled);
     }
 
     [Fact]
@@ -55,7 +57,7 @@ public sealed class ListDocumentChunksHandlerTests
         var fakes = new Fakes(chunks, 1);
         var handler = new ListDocumentChunksHandler(fakes.ChunkRepo, fakes.DocRepo, fakes.Tenant);
 
-        var response = await handler.Handle(new ListDocumentChunksQuery(DocId, VerId));
+        var response = (await handler.Handle(new ListDocumentChunksQuery(DocId, VerId))).Value;
 
         Assert.EndsWith("...", response.Items[0].ContentPreview);
         Assert.True(response.Items[0].ContentPreview.Length <= 303); // 300 + "..."
@@ -90,6 +92,8 @@ public sealed class ListDocumentChunksHandlerTests
         private readonly int _count;
         public FakeChunkRepo(IReadOnlyList<DocumentChunk> chunks, int count) { _chunks = chunks; _count = count; }
 
+        public bool ListCalled { get; private set; }
+
         public Task AddRangeAsync(IReadOnlyCollection<DocumentChunk> c, CancellationToken ct = default) => Task.CompletedTask;
         public Task<IReadOnlyList<DocumentChunk>> GetByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default)
             => Task.FromResult(_chunks);
@@ -97,7 +101,10 @@ public sealed class ListDocumentChunksHandlerTests
         public Task<int> CountByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) => Task.FromResult(_count);
         public Task DeleteByVersionAsync(Guid tid, Guid did, Guid vid, CancellationToken ct = default) => Task.CompletedTask;
         public Task<ChunkListResult> ListByVersionAsync(Guid tid, Guid did, Guid vid, int pn, int ps, string? s, string? st, int? pf, CancellationToken ct = default)
-            => Task.FromResult(new ChunkListResult(_chunks, pn, ps, _count));
+        {
+            ListCalled = true;
+            return Task.FromResult(new ChunkListResult(_chunks, pn, ps, _count));
+        }
         public Task<DocumentChunk?> GetByIdForVersionAsync(Guid tid, Guid did, Guid vid, Guid cid, CancellationToken ct = default)
             => Task.FromResult<DocumentChunk?>(_chunks.FirstOrDefault(c => c.Id == cid));
     }

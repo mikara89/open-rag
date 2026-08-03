@@ -29,6 +29,9 @@ public static class OpenRagPipelineRegistration
                 services.AddScoped(
                     typeof(IPipelineBehavior<,>),
                     typeof(LoggingScopeBehavior<,>));
+                services.AddScoped(
+                    typeof(IPipelineBehavior<,>),
+                    typeof(ResultValidationBehavior<,>));
                 break;
 
             case OpenRagPipelineHost.Worker:
@@ -38,15 +41,14 @@ public static class OpenRagPipelineRegistration
                 services.AddScoped(
                     typeof(IPipelineBehavior<,>),
                     typeof(ExplicitTenantMessageBehavior<,>));
+                services.AddScoped(
+                    typeof(IPipelineBehavior<,>),
+                    typeof(WorkerValidationBehavior<,>));
                 break;
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(host), host, null);
         }
-
-        services.AddScoped(
-            typeof(IPipelineBehavior<,>),
-            typeof(ValidationBehavior<,>));
 
         return services;
     }
