@@ -309,7 +309,7 @@ api.MapPost("/rag/ask", async (
     var query = new AskQuestionQuery(
         Question: request.Question,
         FilterDocumentIds: request.DocumentIds?.Count > 0 ? request.DocumentIds : null,
-        TopK: request.TopK > 0 ? request.TopK : null,
+        TopK: request.TopK,
         Model: request.Model ?? "mock-chat",
         CorrelationId: Guid.NewGuid().ToString("N"));
 
@@ -342,7 +342,7 @@ app.Run();
 internal sealed record AskQuestionRequest(
     string Question,
     IReadOnlyCollection<Guid>? DocumentIds,
-    int TopK,
+    int? TopK,
     string? Model
 );
 
