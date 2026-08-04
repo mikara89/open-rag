@@ -28,12 +28,14 @@ The platform accepts files, stores originals through `IFileStorage`, preprocesse
 | [Trusted tenant resolution](docs/16-trusted-tenant-resolution.md) | JWT tenant claims, API trust boundary, and Worker propagation |
 | [Authorization and retrieval isolation](docs/17-authorization-and-isolation.md) | Tenant authorization, storage ownership, database constraints, vector retrieval, and RAG fail-closed rules |
 | [Hybrid Result error model](docs/18-hybrid-result-error-model.md) | Expected API outcomes, stable error codes, HTTP compatibility, telemetry, and Worker/CAP boundary |
+| [Live cross-tenant security tests](docs/19-live-cross-tenant-security-tests.md) | Disposable PostgreSQL/pgvector, filesystem, authenticated API, RAG, and Worker isolation proof |
 | [Security policy](SECURITY.md) | Supported status, vulnerability reporting, and known security limitations |
 | [ADR 0001](docs/adr/0001-use-clean-onion-with-vertical-slices.md) | Architecture style |
 | [ADR 0002](docs/adr/0002-use-aspire-for-local-development.md) | Aspire local development |
 | [ADR 0003](docs/adr/0003-use-cap-with-postgresql-storage.md) | CAP with PostgreSQL storage |
 | [ADR 0004](docs/adr/0004-use-mediator-pipelines-for-narrow-cross-cutting-concerns.md) | Narrow Mediator pipelines for validation, context, scopes, and telemetry |
 | [ADR 0005](docs/adr/0005-use-a-hybrid-result-model-for-expected-api-outcomes.md) | Hybrid Result model for expected API outcomes while Workers remain exception-based |
+| [ADR 0006](docs/adr/0006-use-disposable-postgresql-pgvector-containers-for-live-integration-tests.md) | Disposable PostgreSQL/pgvector containers for live security integration tests |
 
 ## Key decisions
 
@@ -77,9 +79,9 @@ The platform accepts files, stores originals through `IFileStorage`, preprocesse
 
 ## PostgreSQL and pgvector compatibility
 
-Runtime processing and RAG retrieval require PostgreSQL with the pgvector extension. Aspire uses `pgvector/pgvector:pg17`; CI intentionally does not start PostgreSQL because the automated tests use isolated models and fakes.
+Runtime processing and RAG retrieval require PostgreSQL with the pgvector extension. Aspire uses `pgvector/pgvector:pg17`; the dedicated live-security CI job uses `pgvector/pgvector:0.8.2-pg17-bookworm`.
 
-The `MigrateEmbeddingVectorToPgvector` EF migration changes the embedding column from `bytea` to native `vector`. Back up any existing database first. Treat legacy `bytea` embedding values as regenerable data: they may need to be dropped during migration and recreated through `POST /api/documents/{id}/reprocess` with `forceEmbeddings: true`.
+The `MigrateEmbeddingVectorToPgvector` EF migration changes the embedding column from little-endian `bytea` values to native `vector` with an explicit preserving conversion. Back up any existing database first and rehearse the migration against representative data.
 
 ## Security boundary
 
@@ -87,7 +89,7 @@ Every `/api` endpoint requires a validated JWT Bearer token. The default user-ID
 
 The tenant is the current resource-authorization boundary: any authenticated user with a valid trusted tenant claim may operate on that tenant's resources. `CreatedByUserId` is audit metadata, not a per-user ownership ACL. Document/version/chunk reads are explicitly tenant-scoped; persisted object keys are validated against tenant/document/version ownership; pgvector queries parameterize and apply the tenant, optional document filter, embedding compatibility, and full chunk relationship; RAG validates filters before embedding and retrieved identities before any LLM call. See [authorization and retrieval isolation](docs/17-authorization-and-isolation.md).
 
-> **P0.4 authorization/isolation, P0.4.1 Mediator pipelines, and P0.4.2 hybrid Result handling are complete.** Expected authenticated HTTP validation, not-found, and conflict outcomes use `Result<T>` and map to compatible Problem Details with stable codes. Technical, cancellation, unexpected, and isolation failures remain exceptions; Worker/CAP semantics remain exception-based. P0.5 cross-tenant live integration tests remain planned and still require disposable infrastructure.
+> **P0.4 authorization/isolation, P0.4.1 Mediator pipelines, P0.4.2 hybrid Result handling, and P0.5 live cross-tenant testing are complete.** Code-level isolation is covered by disposable PostgreSQL/pgvector, filesystem-storage, authenticated API, RAG, and Worker tests. This does not make the platform production-ready.
 
 ## Quick validation
 
@@ -104,8 +106,11 @@ The tenant is the current resource-authorization boundary: any authenticated use
 # Documentation only
 ./scripts/docs-check.ps1
 
+# Disposable PostgreSQL/pgvector cross-tenant suite (Docker required)
+./scripts/test-live-cross-tenant.ps1
+
 # API smoke test (requires running services)
 ./scripts/mvp-smoke-test.ps1 -Token $env:OPENRAG_ACCESS_TOKEN
 ```
 
-GitHub Actions runs dependency-free validation for pull requests to `main` and pushes to `main`, fails when NuGet vulnerability data is unavailable or when High or Critical vulnerabilities are reported (including transitive packages), and retains TRX test results and Cobertura coverage as separate artifacts. The live MVP smoke test is deliberately manual until CI has disposable service infrastructure.
+GitHub Actions runs dependency-free validation and a dedicated Docker-backed `live-cross-tenant-tests` job for pull requests to `main` and pushes to `main`. Both enforce the dependency audit; TRX and Cobertura outputs are retained separately, with safe diagnostics on live-test failure.

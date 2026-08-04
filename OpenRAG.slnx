@@ -16,6 +16,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/OpenRAG.ArchitectureTests/OpenRAG.ArchitectureTests.csproj" />
     <Project Path="tests/OpenRAG.IntegrationTests/OpenRAG.IntegrationTests.csproj" />
+    <Project Path="tests/OpenRAG.LiveIntegrationTests/OpenRAG.LiveIntegrationTests.csproj" />
     <Project Path="tests/OpenRAG.UnitTests/OpenRAG.UnitTests.csproj" />
   </Folder>
 </Solution>

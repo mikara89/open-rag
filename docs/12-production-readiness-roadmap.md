@@ -29,14 +29,14 @@ This is a production-oriented development baseline, not a production deployment.
 - **Dependencies:** P0.2 authentication foundation.
 - **Status:** Complete — HTTP tenant identity is resolved only from exactly one validated non-empty GUID JWT claim; request spoofing cannot override it; the development fallback is removed; CAP events and Worker commands preserve tenant context explicitly. The final P0.3 validation run passed all 403 tests, dependency auditing, format checks, and documentation checks.
 
-> Trusted tenant resolution, P0.4 code-level authorization/isolation, P0.4.1 pipelines, and P0.4.2 hybrid Result handling are complete. P0.5 live adversarial infrastructure remains planned.
+> Trusted tenant resolution, P0.4 code-level authorization/isolation, P0.4.1 pipelines, P0.4.2 hybrid Result handling, and P0.5 disposable live adversarial testing are complete.
 
 ### P0.4 — Authorization and retrieval isolation
 
 - **Objective:** Enforce authorization and tenant isolation across document lifecycle, storage, processing, vector retrieval, and RAG responses.
 - **Acceptance criteria:** Every protected operation applies policy and tenant filters; storage and vector queries cannot cross tenants; denial behavior is consistent and audited.
 - **Dependencies:** P0.2 authentication foundation and P0.3 trusted tenant resolution.
-- **Status:** Complete — Tenant-level authorization is enforced through explicit repository contracts, complete nested-resource validation, canonical object-key ownership, tenant-inclusive database relationships, parameterized pgvector retrieval, RAG filter preauthorization, and fail-closed result validation before LLM calls. Typed Problem Details and focused unit, architecture, model, and dependency-free integration tests cover denial behavior. P0.5 live infrastructure remains separate.
+- **Status:** Complete — Tenant-level authorization is enforced through explicit repository contracts, complete nested-resource validation, canonical object-key ownership, tenant-inclusive database relationships, parameterized pgvector retrieval, RAG filter preauthorization, and fail-closed result validation before LLM calls. Typed Problem Details and focused unit, architecture, model, dependency-free integration, and P0.5 live tests cover denial behavior.
 
 ### P0.4.1 — Mediator pipeline foundation
 
@@ -57,20 +57,20 @@ This is a production-oriented development baseline, not a production deployment.
 - **Objective:** Prove that one tenant cannot read, mutate, retrieve, reprocess, or delete another tenant's data.
 - **Acceptance criteria:** Automated integration tests exercise API, persistence, vector retrieval, background processing, and storage boundaries with positive and negative tenant cases.
 - **Dependencies:** P0.2 through P0.4.2 plus disposable integration-test infrastructure.
-- **Status:** Planned
+- **Status:** Complete — The dedicated suite applies production migrations to disposable PostgreSQL 17 with pgvector 0.8.2 and exercises real repositories, unit of work, local filesystem storage, authenticated API/Result mapping, pgvector SQL, RAG prompt isolation, and actual Worker consumers. External AI/document processing and CAP publication are deterministic boundaries. See [live cross-tenant security tests](19-live-cross-tenant-security-tests.md) and [ADR 0006](adr/0006-use-disposable-postgresql-pgvector-containers-for-live-integration-tests.md).
 
 ## Priority gaps
 
 ### Runtime and deployment
 
-- Add a live smoke-test environment with disposable PostgreSQL/pgvector and RabbitMQ services. Keep the default build/test job dependency-free.
+- Extend live infrastructure to a broker-backed smoke environment when deployment topology is defined; P0.5 intentionally stops at actual consumers and deterministic CAP publication without adding RabbitMQ solely for tests.
 - Add Docker Compose or deployment manifests with explicit health checks, persistent volumes, configuration injection, and upgrade procedures.
 - Add a deployment pipeline with environment promotion, migration gates, rollback guidance, and post-deployment verification.
 - Implement an S3-compatible object storage provider behind `IFileStorage`; local filesystem storage remains development-only.
 
 ### Identity, authorization, and tenancy
 
-- Prove the completed P0.4 resource controls through P0.5 disposable live PostgreSQL/pgvector, object-storage, API, and Worker infrastructure.
+- Add production object storage and deployment-level security testing beyond the completed P0.5 PostgreSQL/pgvector, local-filesystem, API/RAG, and Worker proof.
 - Design users, tenant membership, sharing, and per-user document ACLs before expanding authorization below the tenant boundary.
 
 ### Reliability and operations

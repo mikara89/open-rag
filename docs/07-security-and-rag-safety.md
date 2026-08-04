@@ -16,7 +16,7 @@ JWT Bearer authentication is implemented for every `/api` endpoint. The authenti
 
 Trusted tenant resolution is implemented: the API uses `HttpContextCurrentTenant` to read only the validated JWT claim (`tenant_id` by default), and Workers receive the same tenant explicitly in CAP events and processing commands. Headers, query strings, routes, and bodies cannot select the tenant, and no development fallback exists. See [trusted tenant resolution](16-trusted-tenant-resolution.md).
 
-Code-level resource authorization and isolation are complete through P0.4.2. P0.5 must still prove those controls with adversarial cross-tenant tests against disposable live PostgreSQL/pgvector, object storage, API, and Worker infrastructure. The current system is not yet production-safe for multitenant use.
+Code-level resource authorization and isolation are complete through P0.5. Disposable live tests cover PostgreSQL/pgvector, the configured local-filesystem provider, authenticated API/RAG behavior, real repositories, and Worker consumers. Production object storage, a full broker topology, deployment, and operational hardening remain incomplete, so the system is not yet production-safe for multitenant use.
 
 ## Tenant isolation
 
