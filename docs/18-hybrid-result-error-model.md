@@ -4,7 +4,7 @@
 
 P0.4.2 — Hybrid Result and application error model: **Complete**.
 
-P0.4, P0.4.1, and P0.4.2 are complete. P0.5 live adversarial infrastructure remains planned, so this status does not claim production-safe multitenancy.
+P0.4, P0.4.1, P0.4.2, and P0.5 are complete. P0.5 now verifies the documented HTTP and Worker contracts with disposable live infrastructure, but this status does not claim production-safe multitenancy.
 
 ## Rule and taxonomy
 

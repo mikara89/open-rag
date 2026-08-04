@@ -4,7 +4,7 @@
 
 The tenant is the current resource-authorization boundary. Any authenticated user with a valid trusted tenant claim may operate on resources belonging to that tenant. `CreatedByUserId` is audit metadata only; it is not a document-owner ACL.
 
-P0.4 is complete but does not add users, memberships, invitations, sharing, document ACLs, or per-user ownership restrictions. Provider diagnostics remains administrator-only. P0.4.1 added narrow host pipelines, and P0.4.2 added Results for expected HTTP outcomes; every resource authorization and isolation check documented here remains explicit in its handler, repository, storage, vector, or RAG boundary. P0.5 remains responsible for live adversarial tests using disposable PostgreSQL/pgvector, object storage, API, and Worker infrastructure.
+P0.4 is complete but does not add users, memberships, invitations, sharing, document ACLs, or per-user ownership restrictions. Provider diagnostics remains administrator-only. P0.4.1 added narrow host pipelines, P0.4.2 added Results for expected HTTP outcomes, and P0.5 adds live adversarial proof using disposable PostgreSQL/pgvector, local filesystem storage, authenticated API/RAG, real repositories, and Worker consumers. Every authorization check remains explicit in its handler, repository, storage, vector, or RAG boundary.
 
 ## Denial contract
 
@@ -81,4 +81,4 @@ Vector results carry tenant, document, version, and chunk identity internally. B
 
 Security logs use structured trace/correlation and resource identifiers. They do not contain access tokens, signing keys, raw content, embedding vectors, complete prompts, response previews, or full storage keys. A foreign-resource request does not log the actual owner at normal information level.
 
-P0.4 provides code-level, unit, architecture, model, and dependency-free integration proof. It does not claim real PostgreSQL pgvector execution or full cross-tenant live-system proof. Those scenarios remain P0.5, which is still planned; OpenRAG remains not production-ready.
+P0.5 adds real PostgreSQL/pgvector execution and cross-tenant proof across the configured filesystem storage, authenticated API/RAG, repositories, and Worker consumer boundary. See [the live test architecture](19-live-cross-tenant-security-tests.md). Production object storage, full broker transport, deployment, backup/restore, and operational hardening remain incomplete; OpenRAG remains not production-ready.
